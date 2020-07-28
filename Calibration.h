@@ -39,10 +39,24 @@ using std::tuple;
 template<class T>
 void print(const vector<T>& v, const char* file)
 {
-    FILE* fp = fopen(file, "wt");
-    for (auto x:v)
-        fprintf(fp, "%8.5f\n", x);
-    fclose(fp);
+    if constexpr (std::is_same <T, std::vector<float>()>)
+    {
+        FILE* fp = fopen(file, "wt");
+        for (const auto& x : v)
+        {
+            for (auto y : x)
+                fprintf(fp, "%8.5f ", y);
+            fprintf(fp, "\n");
+        }
+        fclose(fp);
+    }
+    else
+    {
+        FILE* fp = fopen(file, "wt");
+        for (auto x : v)
+            fprintf(fp, "%8.5f\n", x);
+        fclose(fp);
+    }
 }
 
 // boundary locations where valid

@@ -1,4 +1,5 @@
 # scanner_refl_fix
+# scanner_refl_fix
 ## A Program to correct Large Area Spatial Crosstalk and tools to make ICC profiles using Argyll software
 
 *scanner_refl_fix* provides 2 main functionalities. Firstly, it removes light that is reflected
@@ -192,7 +193,7 @@ Note that the average standard deviations of the RGB channels is reduced from 7.
 
 *scanner_refl_fix* can also be used to create high quality ICC scanner profiles.
 This requires XRite's I1Profiler
-and a spectrophotometer but does not require XRite licenses as it only uses I1Profiler to extract
+and a uV cut (M2) spectrophotometer but does not require XRite licenses as it only uses I1Profiler to extract
 profile measurement data. Provided are a CGATs RGB file and Tif images of the corresponding targets.
 It is strictly not necessary to use the supplied targets. I1Profiler can create arbitrary,
 multi-page charts that are sized appropriately for spectrophotometers such as the i1Pro 2 or i1iSis.

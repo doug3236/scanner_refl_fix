@@ -1,3 +1,4 @@
+#define _CRT_SECURE_NO_WARNINGS
 /*
 Copyright (c) <2020> <doug gray>
 
@@ -38,7 +39,7 @@ Array2D<V3> FromTiffReader(string arg)
     return rgbout;
 }
 
-// Get minimum of r, g, or b in an rgb vector
+// Get minimum of r, g, or b in an rgb array
 Array2D<float> get_min_rgb(const Array2D<V3>& rgbin)
 {
     Array2D<float> rgbout(rgbin.nr, rgbin.nc);
@@ -51,63 +52,55 @@ Array2D<float> get_min_rgb(const Array2D<V3>& rgbin)
     return rgbout;
 }
 
-
-// get averages for horiz slices for use in finding vertical extents
+// return top and bottom of image assuming white border
+// if flip==true, return left and right by rotating image 90 degrees clockwise
 pair<size_t, size_t> get_patch_ends(const Array2D<float>& g_in, bool flip)
 {
+    struct AveStd { float ave, std; };
+    auto strips_info = [](const Array2D<float>& v) {
+        //auto printx = [](const vector<AveStd>& v) {
+        //    string fname="test\\patch_ends";
+        //    static string fname_end = "0.txt";
+        //    FILE* fp = fopen((fname+fname_end).c_str(), "wt");
+        //    for (auto x : v)
+        //        fprintf(fp, "%8.5f %8.5f\n", x.ave, x.std);
+        //    fclose(fp);
+        //    fname_end[0]++;
+        //};
+        float v_max=*std::max_element(v.v.begin(), v.v.end());
+        float v_min=*std::min_element(v.v.begin(), v.v.end());
+        auto get_boundary = [v_max, v_min](const vector<AveStd>& v)
+        {
+            for (int i = int(v.size()) / 3; i > 0; i--)
+            {
+                // allow for 15% reduction from max white value for white border detection
+                if (v[i].ave > .85 * v_max && v[i].std < .05)
+                {
+                    for (int ii = 0; ii < 20; ii++)
+                        if (v[i+ii].ave  < (v[i].ave+v[i+20].ave)/2.0f)
+                            return i+ii;
+                }
+            }
+            return 1;
+        };
+        vector<AveStd> strips(v.nr);
+        for (int i = 0; i < v.nr; i++)
+        {
+            Statistics strip;
+            for (int ii = 0; ii < v.nc; ii++)     // copy a row
+                strip.clk(v(i, ii));
+            strips[i].ave = strip.ave();
+            strips[i].std = strip.std();
+        }
+        int top = get_boundary(strips);
+        std::reverse(strips.begin(), strips.end());
+        int bottom = int(strips.size()) - get_boundary(strips);
+        //printx(strips);
+        return std::pair<int,int>(top,bottom);
+    };
     auto g = flip ? transpose(g_in) : g_in;
-    int top=-1, bottom=-1;
-    vector<float> c5(g.nc/5);
-    vector<float> c(g.nc);
-    for (int i = g.nr/3; i >= 0; i--)
-    {
-        for (int ii=0; ii < g.nc; ii++)
-            c[ii]=g(i,ii);
-        for (int ii=0; ii < g.nc/5; ii++)
-            c5[ii]=c[5*ii];
-        sort(c5.begin(), c5.end());
-        float ctr=c5[c5.size()/2];
-        if (ctr < .4)
-            continue;
-        double thresh=.04+.15*ctr;
-        int cnt=0;
-        for (int ii=0; ii < c.size(); ii++)
-            if (c[ii]-thresh > ctr || c[ii]+thresh < ctr)
-                cnt++;
-        if (cnt < .01 * c.size())
-        {
-            // back up two pixels if not at start of image, otherwise assume trimmed at boundary
-            if (i > 0)
-                i+=2;
-            top = i;
-            break;
-        }
-    }
-    for (int i = g.nr/3; i <g.nr; i++)
-    {
-        for (int ii=0; ii < g.nc; ii++)
-            c[ii]=g(i,ii);
-        for (int ii=0; ii < g.nc/5; ii++)
-            c5[ii]=c[5*ii];
-        sort(c5.begin(), c5.end());
-        float ctr=c5[c5.size()/2];
-        if (ctr < .4)
-            continue;
-        double thresh=.04+.15*ctr;
-        int cnt=0;
-        for (int ii=0; ii < c.size(); ii++)
-            if (c[ii]-thresh > ctr || c[ii]+thresh < ctr)
-                cnt++;
-        if (cnt < .01 * c.size())
-        {
-            // back up two pixels if not at start of image, otherwise assume trimmed at boundary
-            if (i < g.nr-1)
-                i-=2;
-            bottom = i;
-            break;
-        }
-    }
-    return { top, bottom };
+    //TiffWrite("test\\test_image.tif", g);
+    return strips_info(g);
 }
 
 vector<std::pair<V3, V3>> get_dist_means(vector<BlockVal> const sorted_pixels)
@@ -232,21 +225,20 @@ vector<double> find_patch_metric(vector<double>& v, int start)
 VectorLocs get_rows_and_columns(const Array2D<V3>& rgb, VectorLocs hs, VectorLocs vs)
 {
     VectorLocs ret;
-    std::array<array<size_t, 2>, 10> ratios = { {{2,101},{17,101},{36,101},{47,101},{54,101},{62,101},{73,101},{80,101},{92,101},{100,101}} };
     vector<double> cols(maxRowsAndCols+1);
     vector<double> rows(maxRowsAndCols+1);
-    for (size_t pass = 0; pass < ratios.size(); pass++)
+    for (float pass = .005f; pass < .9975f; pass+=.005f) // scan 200 slices and accumulate patch location info
     {
         vector<double> green_slice_h;
-        for (size_t i = hs.first; i <= hs.second; i++)
-            green_slice_h.push_back(rgb[int(vs.first + ratios[pass][0] * (vs.second - vs.first) / ratios[pass][1])][i][1]);
+        for (size_t i = hs.first; i < hs.second; i++)
+            green_slice_h.push_back(rgb[int(vs.first + pass*(vs.second-vs.first))] [i] [1]);
         vector<double> cols_1 = find_patch_metric(green_slice_h, minRowsAndCols);
         for (size_t i = 0; i < cols_1.size(); i++)
             cols[i] += cols_1[i];
 
         vector<double> green_slice_v;
-        for (size_t i = vs.first; i <= vs.second; i++)
-            green_slice_v.push_back(rgb[static_cast<int>(i)][hs.first + ratios[pass][0] * (hs.second - hs.first) / ratios[pass][1]][1]);
+        for (size_t i = vs.first; i < vs.second; i++)
+            green_slice_v.push_back(rgb[int(i)][int(hs.first + pass*(hs.second-hs.first))][1]);
         vector<double> rows_1 = find_patch_metric(green_slice_v, minRowsAndCols);
         for (int i = 0; i < rows_1.size(); i++)
             rows[i] += rows_1[i];
@@ -262,9 +254,10 @@ vector<vector<PatchStats>> extract_patch_data(const Array2D<V3>& rgb)
 {
     Array2D rgbmin = get_min_rgb(rgb);
     auto vs = get_patch_ends(rgbmin,false);     // top,bottom
-    rgbmin = rgbmin.clip(Extants{ 0, (int)vs.second, 0, (int)rgbmin.nc });
+    validate(vs.first > 0 && vs.second > 0, "No White Space at Top or Bottom detected.");
+    rgbmin = rgbmin.clip(Extants{ int(vs.first), int(vs.second), 0, int(rgbmin.nc) });
     auto hs = get_patch_ends(rgbmin,true);      // left,right
-
+    validate(hs.first > 0 && hs.second > 0, "No White Space at Left or Right detected.");
     auto [rows, cols] = get_rows_and_columns(rgb, hs, vs);
     float hdelta = static_cast<float>(hs.second - hs.first + 1) / cols;
     float vdelta = static_cast<float>(vs.second - vs.first + 1) / rows;
@@ -289,7 +282,7 @@ vector<vector<PatchStats>> extract_patch_data(const Array2D<V3>& rgb)
                     patch.push_back(spot);
                 }
             std::sort(patch.begin(), patch.end(), [](BlockVal& a, BlockVal& b) {return a.dist > b.dist; });
-            //auto xxx=process_sample(patch);
+            // auto xxx=process_sample(patch);  // for debugging: just one process
             row_samples.push_back(patch);
             get_dist_means(patch);
         }

@@ -163,6 +163,15 @@ void attach_profile(const std::string & profile, TIFF * out, const ArrayRGB & rg
     }
 }
 
+void TiffWrite(const char* file, const Array2D<float> rgb)
+{
+    ArrayRGB rgb3(rgb.nr, rgb.nc, 200, false, 1.0);
+    for (int i = 0; i < rgb.nr; i++)
+        for (int ii = 0; ii < rgb.nc; ii++)
+            rgb3(i,ii,0)=rgb3(i,ii,1)=rgb3(i,ii,2)=rgb(i,ii);
+    TiffWrite(file, rgb3,"");
+}
+
 void TiffWrite(const char *file, const ArrayRGB &rgb, const string &profile)
 {
     float gamma = rgb.gamma;

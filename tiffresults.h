@@ -53,6 +53,7 @@ using std::tuple;
 class ArrayRGB;
 void attach_profile(const std::string & profile, TIFF * out, const ArrayRGB & rgb);
 void TiffWrite(const char *file, const ArrayRGB &rgb, const string &profile);
+void TiffWrite(const char* file, const Array2D<float> rgb);
 ArrayRGB TiffRead(const char *filename, float gamma);
 tuple<ArrayRGB, int, int> getReflArea(const int dpi, InterpolateRefl& interpolate, const int use_this_size_if_not_0 = 0);
 ArrayRGB generate_reflected_light_estimate(const ArrayRGB& image_reduced, const ArrayRGB& refl_area);
