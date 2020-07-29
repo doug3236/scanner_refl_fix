@@ -255,7 +255,7 @@ vector<vector<PatchStats>> extract_patch_data(const Array2D<V3>& rgb)
     Array2D rgbmin = get_min_rgb(rgb);
     auto vs = get_patch_ends(rgbmin,false);     // top,bottom
     validate(vs.first > 0 && vs.second > 0, "No White Space at Top or Bottom detected.");
-    rgbmin = rgbmin.clip(Extants{ int(vs.first), int(vs.second), 0, int(rgbmin.nc) });
+    rgbmin = rgbmin.clip(Extants{ int(vs.first), int(vs.second), 0, int(rgbmin.nc-1) });
     auto hs = get_patch_ends(rgbmin,true);      // left,right
     validate(hs.first > 0 && hs.second > 0, "No White Space at Left or Right detected.");
     auto [rows, cols] = get_rows_and_columns(rgb, hs, vs);
