@@ -52,7 +52,6 @@ int main(int argc, char const** argv)
     if (argc==1)
         message_and_exit("");
     vector<string> cmdArgs = vectorize_commands(argc, argv);
-    options.executable_directory = cmdArgs[0].substr(0, cmdArgs[0].rfind("\\")) + "\\";
     cmdArgs.erase(cmdArgs.begin());
 
     // process options, all options must be valid and at least one file argument remaining
@@ -60,7 +59,7 @@ int main(int argc, char const** argv)
     {
         vector<vector<string>> argList{cmdArgs};
         process_args(cmdArgs, options);
-        validate(options.force_ouput_bits == 0 || options.force_ouput_bits == 8 || options.force_ouput_bits == 16, "-F n:   n must be either 8 or 16");
+        validate(options.force_output_bits == 0 || options.force_output_bits == 8 || options.force_output_bits == 16, "-F n:   n must be either 8 or 16");
 
         // use batch file list of commands if -b "batchfile.txt" selected
         if (options.batch_file != "")
@@ -69,17 +68,15 @@ int main(int argc, char const** argv)
             validate(cmdArgs.size()==0, "-b batchfile must not have any other arguments");
             argList = cgats_utilities::tokenize_file(options.batch_file);
         }
-        auto executable_directory = options.executable_directory;
         for (auto cmdLine : argList)
         {
             // Skip comment lines (start with %) and blank lines
             if (cmdLine.size()==0 || cmdLine[0].length() == 0 || cmdLine[0].substr(0,1)=="%")
                 continue;
             // load a new Options with defaults then set exec directory
-            Options options; options.executable_directory=executable_directory;
             process_args(cmdLine, options);
             validate(cmdLine.size() != 0 || options.batch_file != "", "command line error");
-            validate(options.force_ouput_bits == 0 || options.force_ouput_bits == 8 || options.force_ouput_bits == 16, "-F n:   n must be either 8 or 16");
+            validate(options.force_output_bits == 0 || options.force_output_bits == 8 || options.force_output_bits == 16, "-F n:   n must be either 8 or 16");
 
             // UTILITY: Process scanned target and optionally CGATs measurement
             if (options.make_rgblab_cgats)

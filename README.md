@@ -33,15 +33,16 @@ in a target patch set are no longer affected by the nearby patch colors. For exa
 randomized set of ColorChecker colors, each duplicated 10 times, improves the ave. delta E 1976
 from 1.02 to 0.42 using a 2871 count patch set after the tif images had reflected light removed. Even
 profiles made using XRite's IT8 improved a bit from dE 3.92 to 3.47. The three factors that reduced
-the IT8 accuracy was:
+the IT8 accuracy from the most significant were:
 
+- Metameric failure. This is where the scanner's light source and RGB color filters deviate from
+the Luther/Ives criteria AND when the spectrum differs between two
+supposedly identical colors. These are specific to a scanner's design.
+For the V850, oranges have quite different spectra between CYMK printed
+and photo-chemistry of the IT8 chart.
 - Actual errors in measured colors. The IT8 chart was not individually measured and photochemistry is
 quite sensitive to small changes when the chart batches are made.
 - The small number of patches in an IT8 chart which has just over 200 colors.
-- Metameric failure. This is where the scanner's light source and RGB color filters deviate from
-the Luther/Ives criteria AND when the spectrum differs between two
-supposedly identical colors. For the V850, oranges have quite different spectra between CYMK printed
-and photo-chemistry of the IT8 chart.
 
 
 ### This is how it works.
@@ -81,44 +82,71 @@ be shifted in the direction of that color.
 
 ## Walkthrough of Typical ScannerRefFix uses
 ### Initially Calibrating the Scanner
-Initially one needs to create the scanner reflection model. This is done by printing a
-chart, *scan_calibration.tif*, that contains various sized white squares embedded
-in black surrounds. From this the light that is reflected from the paper
-off the nearby illuminating frosted white components is  modeled as a 2D matrix and stored as the file
-"scanner_cal.txt." This file should be printed using Rel. Col. Intent and placed in the same directory
-as the executable scanner_refl_fix.exe or in the directory where the program is executed. The paper and printer
-used is not important. It is not necessary to use the same paper or even paper type or printer when using
-the resulting model. The model is specific only to the scanner.
+Initially one needs to create the scanner reflection model. This only
+needs to be done once. First print a special
+chart, *scan_calibration.tif* using Rel. Col. Intent at 100%.
+This contains various sized white squares embedded
+in black surrounds. The paper and printer
+used is not important. It is not necessary to use the same paper or even paper type or printer.
+However, the calibration is specific only to this scanner model.
+
+When this print is scanned, the tif image is then processed to calculate the way light is reflected from
+nearby internal surfaces.  This spatial reflection is  modeled as a 2D matrix and stored as the file
+*scanner_cal.txt*. This calibration file should be in the same directory as subsequent executions of
+*scanner_refl_fix*.
 
 **Image analyzed to create reflection correction data<br>**
 *scan_calibration.tif* <br> 
 ![](refs/scan_calibration_small.jpg "scan_calibration.jpg")
 
-To create the scanner reflection model, print using Relative
-Colorimetric Intent then scan *scanner_calibration.tif*.
-The scan should be without any corrections or conversions to a colorspace
-but just the native scanner's RGB in a tiff format.
+The print must be scanned at 200 DPI without any corrections or conversions to a colorspace
+but just the native scanner's RGB in a tiff format. Shown are the settings for the Epson V850.
 
 **Epson V850 Scanner RAW Settings**<br>
 ![](refs/EpsonV850_no_icm.jpg "EpsonV850 no icm.jpg")
 
-Scan at 200 DPI for best results. Provided is a scan from an Epson V850.
-
     scanner_refl_fix -c scan_calibration_glossy.tif
 
-Makes the scanner_cal.txt model which will be used for future scan corrections and prints some statistical info:
+Analyzes *scan_calibration_glossy.tif* and creates a calibration matrix file, *scanner_cal.txt*,
+which will be used to model extra light that is reflected back onto the document.
+It also prints some statistical data the correction produces.
 
     Reading scanner reflection calibration file and creating "scanner_cal.txt"
-    Gammas: 1.52 1.59 1.63 1.69
+    Gammas: 1.59
     Uncorrected reflection rms err 11.04378
     Corrected reflection rms err 0.95490
+
+The file *scanner_cal.txt* contains info fields and a 19x19 matrix with each entry representing
+the amount of light reflected from media in grid squares of 0.10 inches.
+
+    "scanner_cal.txt"
+    scanner "scan_calibration_glossy.tif"  "Aug 12 2020 13:26:14"
+    gamma 1.585
+    grid_size 19
+    grid_dpi 10
+     0.00000  0.00000 ...
+     0.00000  ...
+     ....
+
+The second entry in the first line of the created calibration file *scanner_cal.txt* can be edited.
+The default is the calibration tif file. I recommend using the name/model of the scanner.
+This file should be placed in the same directory that the program is
+executed (not the location where the program binary or executable is located).
 
 ### Correcting scans
 Now you are ready to correct new scans. The simplest way to use *scanner_refl_fix* where
 the first argument is the scan to be reflection corrected
 and the second argument is the file name for corrected scan.
 Alternately the option "-B" will fix one or more tif files and automatically postpend "_f"
-to the main tif file name.
+to the main tif file name. This is useful for automatically converting multiple scans. If you
+have already made an input profile for your scanner the option *-B profilename.icm* will
+cause the program to attach the profile to tif file. This makes it very convenient to convert
+multiple files and each will have the profile attached. For instance:
+
+    scanner_refl_fix -P scannerv850.icm -B scane1.tif scan2.tif scan3.tif ...
+
+If you have a spectrophotometer, see the section "Creating a Scanner ICC Profile using Argyll and I1Profiler"
+below to use this program to make scanner ICC profiles.
 
 ### Checking how well scans are corrected for reflection
 
@@ -130,13 +158,14 @@ and Neutral (white/gray) patches surrounded by white, a middle gray, and black.
 ![](refs/reflection_small.jpg "reflection.jpg")
 
 
-To test your scanner, print the chart *reflection.tif* using Adobe's ACPU or other program that can print w/o color management,
-then scan it. Then run the following command to remove the reflected light.
+To test your scanner, print the chart *reflection.tif* using Adobe's ACPU or other
+program that can print w/o color management, then scan it.
+Then run the following command to remove the reflected light.
 
     scanner_refl_fix scan_reflection.tif scan_reflection_f.tif
 
-The program can then be used to produce average measurements of the scanner's
-RGB values of each patch along with the max
+The program can then be used to measure RGB averages of the scanned
+patches along with the max
 RGB differences (second number labeled 'd' adjacent to the R, G, B values) 
 that occur from white background scanner reflections.
 The black background produces little reflected light.
@@ -153,17 +182,16 @@ Here's the command and results using the scanned, uncorrected tif image:
 
     Neutrals
        White  d    Gray 9  d    Gray 8  d    Gray 7  d    Gray 6  d    Gray 5  d
-    R  232.4 24.3   199.5 21.8   165.3 19.3   141.0 16.4   116.1 14.3    93.2 12.1
-    G  236.1 24.5   199.7 22.9   167.1 18.4   142.4 17.0   116.4 14.7    92.9 12.1
-    B  241.3 24.1   202.8 22.6   167.7 19.4   140.5 16.6   114.0 14.3    91.3 12.0
+    R  232.5 23.9   199.6 21.4   165.3 18.9   141.1 16.1   116.2 14.0    93.2 11.8
+    G  236.2 24.1   199.9 22.6   167.2 18.1   142.4 16.8   116.5 14.5    92.8 11.8
+    B  241.4 23.9   203.0 22.4   167.7 19.3   140.5 16.2   113.9 14.1    91.3 11.7
 
     Colors
          Red  d     Green  d      Blue  d      Cyan  d    Yellow  d   Magenta  d
-    R  173.4 16.7    34.7  5.8    66.4  7.8    35.2  5.2   224.3 25.9   171.2 18.4
-    G   34.3  5.2    97.6 11.6    45.2  5.5   123.4 14.1   210.5 24.7    45.7  5.7
-    B   20.5  4.0    52.5  7.3   144.8 15.2   208.7 23.2    68.4  8.6    94.2 10.5
-    Average of all channel stds:  7.66
-    Execution Time: 0.951874
+    R  173.6 16.4    34.7  5.7    66.4  7.7    35.1  5.0   224.4 25.4   171.4 18.0
+    G   34.1  5.0    97.7 11.5    45.2  5.4   123.5 14.0   210.7 24.4    45.7  5.5
+    B   20.3  3.7    52.4  7.1   144.8 15.0   208.8 23.0    68.4  8.3    94.2 10.2
+    Average of all channel stds:  7.53
 
 And here's the command and results from the reflection corrected tif image:
 
@@ -174,17 +202,16 @@ And here's the command and results from the reflection corrected tif image:
 
     Neutrals
        White  d    Gray 9  d    Gray 8  d    Gray 7  d    Gray 6  d    Gray 5  d
-    R  229.5  1.6   197.8  1.0   164.6  2.4   140.9  1.6   116.3  2.4    93.6  2.8
-    G  232.7  2.8   197.8  0.8   166.3  1.6   142.0  1.8   116.5  2.4    93.1  2.6
-    B  237.5  4.7   200.6  1.9   166.6  1.1   140.0  1.5   113.9  2.1    91.5  2.4
+    R  229.6  1.7   197.9  1.1   164.7  2.3   140.9  1.6   116.4  2.3    93.6  2.5
+    G  232.8  2.9   198.0  0.7   166.3  1.6   142.1  1.7   116.5  2.4    93.0  2.4
+    B  237.5  4.8   200.7  1.7   166.7  1.1   140.1  1.3   113.9  2.0    91.5  2.3
 
     Colors
          Red  d     Green  d      Blue  d      Cyan  d    Yellow  d   Magenta  d
-    R  172.7  1.7    34.9  2.3    66.7  1.7    35.4  1.6   221.7  0.5   170.5  0.6
-    G   34.5  1.6    97.8  1.3    45.5  1.0   123.3  0.8   208.4  0.5    46.0  1.0
-    B   20.6  2.0    52.7  1.6   144.2  2.1   206.3  1.5    68.6  1.1    94.3  0.4
-    Average of all channel stds:  0.89
-    Execution Time: 0.924931
+    R  172.8  1.9    34.9  2.0    66.7  1.7    35.4  1.3   221.9  0.4   170.7  0.5
+    G   34.4  1.4    97.9  1.2    45.5  0.9   123.5  0.6   208.5  0.5    45.9  0.8
+    B   20.5  1.7    52.7  1.4   144.3  2.1   206.4  1.7    68.6  0.9    94.4  0.5
+    Average of all channel stds:  0.84
 
 
 Note that the average standard deviations of the RGB channels is reduced from 7.66 to .89
@@ -202,40 +229,62 @@ provided samples for both the i1Pro2 and i1iSis spectrophotometers.
 
 ### Using the i1iSis Spectrophotometer
 For XRite's i1iSis, a 3 page USA Letter format is recommended.
-Included are CGATs RGB files and printable images of the 2871 patches over 3 pages.
+Included are a CGATs RGB file and printable images of the 2871 patches over 3 pages.
 The first two pages are color patches and the third page is devoted to near neutrals where
 color perception is very sensitive to small hue shifts.
 The printed tif images can be scanned then spectrophotometer measured for Lab values with the i1iSis.
-First open i1Profiler then load the RGB CGATs file into the Patches tab.
-Next select USA letter size and profile orientation. The defaults will produce
-3, 957 patch images totaling 2871 patches. Measure with M2 (no uV) since scanners have no significant uV.
-Check to make sure they match the printed/scanned images.
-Samples from my printer/scanner are provided for comparison as well as a batch command
-file *makei1isis.bat* to execute these command on the sample files.
+First open i1Profiler then load the RGB CGATs file (*patchs_2871.txt*) into the Patches tab.
+Next select USA letter size and profile orientation on the Test Chart tab. The defaults will produce
+3, 957 patch images totaling 2871 patches. Print the supplied charts or the charts from I1Profiler and let dry.
+Then measure the charts with M2 (no uV) since scanners have no significant uV.
+Check to make sure they match the printed/scanned images. Then save the measured files as CGATs
+making sure that the saved files include the LAB values. Defaults should be fine as they include LAB values.
 
-First, the 3 charts are printed w/o color management using Adobe's ACPU utility or other appropriate program.
-Second, I1Profiler loads the associated RGB CGATs file
-and scans the charts saving the resulting measurement file in CGATs format.
+Samples from my printer/scanner are provided for comparison as well as a batch command
+file *process_i1isis_scans.bat* to execute these commands on the sample files created from this process.
+
+Then we scan the 3 charts saving the tif files as scanner3pgcg(1-3).tif and correct for reflections.The
+corrected scans will be labeled with "-f" postpended to the names creating scanner3pgcg(1-3)_f.tif
+
+    scanner_refl_fix -B scanner3pgcg1.tif scanner3pgcg2.tif scanner3pgcg3.tif
 
 Next we generate the required Argyll CGATs file that contains scanner RGB values and
-corresponding LAB values from the I1Profilerthen execute Argyll commands to create the profile.
+corresponding LAB values from the I1Profiler measurements then execute Argyll commands to create the profile.
 The "-M" option then reads the patch RGB values from patches
-from 1 or more tif files (*scanner3pgcg1-3.tif*) then adds the LAB values
+from the tif files (*scanner3pgcg(1-3)(_f).tif*) then adds the LAB values
 from the CGATs spectro measurement file (*scanner3pgcg_M2.txt*) and finally creates
-a CGATs file with RGB and associated LAB values .
+CGATs files with RGB and associated LAB values. One for making a standard scanner profile
+from the uncorrected scans and one from the corrected scans.
 
-    scanner_refl_fix -M scanner3pgcg1.tif scanner3pgcg2.tif scanner3pgcg3.tif scanner3pgcg_M2.txt scanner3pgcg_f.txt
+    scanner_refl_fix -M scanner3pgcg1.tif scanner3pgcg2.tif scanner3pgcg3.tif scanner3pgcg_M2.txt scanner_isis.txt
+    scanner_refl_fix -M scanner3pgcg1_f.tif scanner3pgcg2_f.tif scanner3pgcg3_f.tif scanner3pgcg_M2.txt scanner_isis_f.txt
 
-Then we run a Windows script file on the original and corrected scan RGBLAB CGATs files to create ICC profiles:
+The "-M" option on the fixed scans prints out summary stats and a similar one for making standard (unfixed) profiles:
 
-    makescanner scanner3pgcg
+    Processing image patch files
+    File:i1isis/scanner3pg1cg_f.tif ,Rows:33, Cols:29
+    File:i1isis/scanner3pg2cg_f.tif ,Rows:33, Cols:29
+    File:i1isis/scanner3pg3cg_f.tif ,Rows:33, Cols:29
 
-and
+      Deciles:  Center                     Half                        Edge
+    Chart 0:     1.1   1.1   1.1   1.1   1.1   1.1   1.1   1.5   4.6  11.1
+    Chart 1:     1.1   1.1   1.1   1.1   1.1   1.1   1.4   2.7   8.2  15.1
+    Chart 2:     1.0   1.0   1.0   1.0   1.0   1.1   1.4   3.2   9.6  18.5
 
-    makescanner scanner3pgcg_f
+    Associated CGATs measurement text file: i1isis/scanner3pgcg_M2.txt
 
-These create ICC input profiles named: *scanner3pgcg.icm* and *scanner3pgcg_f.icm*.
-This script file (*makescanner.bat*) has a few entries that imports the CGATs RGBLAB file for Argyll
+    Output RGBLAB CGATs file:i1isis/scanner_isis_f.txt, Patches:2871
+    High: Scanner RGB:  227.9 231.8 237.6   Lab:   94.71  -1.48  -1.93
+     Low: Scanner RGB:    8.9  10.6  10.4   Lab:    1.88   0.05  -0.40
+
+
+Then run a Windows script file on the original and corrected scan RGBLAB CGATs files to create ICC profiles:
+
+    makescannerargyll scanner_isis
+    makescannerargyll scanner_isis_f
+
+Using Argyll utlities, these create ICC input profiles named: *scanner_isis.icm* and *scanner_isis_f.icm*.
+This script file (*makescannerargyll.bat*) has a few entries that imports the CGATs RGBLAB file for Argyll
 to create a scanner input profile.
 The first line changes the Argyll algorithm to conform with ICC's definition of Abs. Col. intent.
 The second line processes the CGATs file so it is interpreted as an input data set.
@@ -244,51 +293,22 @@ spectrophotometer but I would suggest .5 for the i1Pro 2. which isn't quite as c
 
     set ARGYLL_CREATE_WRONG_VON_KRIES_OUTPUT_CLASS_REL_WP=1
     txt2ti3 -i -v %1.txt %1
-    colprof -r .2 -v -qh -ua -D %1.icm -O %1.icm %1
+    colprof -r .2 -v -qh -ax -ua -D %1.icm -O %1.icm %1
 
-Argyll's created profile completes and shows the following results:
+Argyll's profile creation completes and shows the following results:
+*colprof* generates the scanner profile and terminates with:
 
-    Profile check complete, peak err = 2.870997, avg err = 0.612049
+    3 page profile using an i1iSis spectro:
+    Profile check complete, peak err = 3.559060, avg err = 0.491142
+    
+    With reflection corrected 3 page profile using an i1iSis spectro:
+    Profile check complete, peak err = 2.774469, avg err = 0.315250
 
-This creates scanner.txt which is a simple CGATs file with scanner RGBs and measured Lab values. Running this through
-Argyll's programs produces an input ICC profile which can be assigned to the scanned images. The same process can be
-applied to reflection corrected images. The ICC profile is created from corrected images like so
+These profiles are then installed in any computer and can be attached to scanned tif images
+to provide accurate colorimetric data. Generally the images should be converted to a standard colorspace
+like sRGB, Adobe RGB, or ProPhoto RGB. The latter will ensure no gamut clipping should the image contain
+colors more saturated than can be represented in smaller spaces.
 
-    scanner_refl_fix -B scanner3pg1cg.tif scanner3pg2cg.tif scanner3pg3cg.tif
-    scanner_refl_fix -M scanner3pg1cg.tif scanner3pg2cg.tif scanner3pg3cg.tif scanner3pgcg_M2.txt scanner3pgcg.txt
-    scanner_refl_fix -M scanner3pg1cg_f.tif scanner3pg2cg_f.tif scanner3pg3cg_f.tif scanner3pgcg_M2.txt scanner3pgcg_f.txt
-
-Which produces the following outputs:
-
-    Processing image patch files
-    File:i1isis/scanner3pg1cg.tif ,Rows:33, Cols:29
-    File:i1isis/scanner3pg2cg.tif ,Rows:33, Cols:29
-    File:i1isis/scanner3pg3cg.tif ,Rows:33, Cols:29
-    and associated CGATs measurement text file: i1isis/scanner3pgcg_M2.txt
-    Output RGBLAB CGATs file:i1isis/scanner3pgcg.txt, Patches:2871
-    High: Scanner RGB:  225.4 228.2 234.1   Lab:   94.70  -1.48  -1.94
-     Low: Scanner RGB:    8.9  10.3  10.0   Lab:    1.89   0.04  -0.40
-
-    Processing image patch files
-    File:i1isis/scanner3pg1cg_f.tif ,Rows:33, Cols:29
-    File:i1isis/scanner3pg2cg_f.tif ,Rows:33, Cols:29
-    File:i1isis/scanner3pg3cg_f.tif ,Rows:33, Cols:29
-    and associated CGATs measurement text file: i1isis/scanner3pgcg_M2.txt
-    Output RGBLAB CGATs file:i1isis/scanner3pgcg_f.txt, Patches:2871
-    High: Scanner RGB:  227.8 231.7 237.6   Lab:   94.70  -1.48  -1.94
-     Low: Scanner RGB:    9.1  10.7  10.3   Lab:    1.89   0.04  -0.40
-
-Argyll's created profile from the 1914 patches completes and shows the following results:
-
-    Profile check complete, peak err = 2.432862, avg err = 0.339278
-
-The command file *makescannerargyll.bat* is quite simple invoking several Argyll commands:
-
-**makescannerargyll.bat**
-
-    set ARGYLL_CREATE_WRONG_VON_KRIES_OUTPUT_CLASS_REL_WP=1
-    txt2ti3 -i -v %1.txt %1
-    colprof -r .2 -v -qh -ua -D %1.icm -O %1.icm %1
 
 ### Using the i1Pro 2 Spectrophotometer
 
@@ -299,22 +319,20 @@ Included are CGATs RGB files and printable image of 522 patches in landscape.
 The printed tif image can be scanned then spectrophotometer measured for Lab values with the i1Pro2.
 First open i1Profiler then load the RGB CGATs file into the Patches tab.
 Next select USA letter size and landscape orientation. The defaults will produce
-a522 patch image. Measure with M2 (no uV) since scanners have no significant uV.
+a 522 patch image. Measure with M2 (no uV) since scanners have no significant uV.
 Check to make sure they match the printed/scanned images.
 Samples from my printer/scanner are provided for comparison.
 
 I1Pro2 charts are printed in landscape but scanned in profile to fit in the scanner.
-This requires that the top of the landscape scan be on the left.
-The "-ML" option then reads the patch RGB values left to right starting from the bottom.
-The following command reads the sample patches from a reflection corrected
-landscape print scanned in profile with the header on the left.
+This requires that the top (titled portion) of the landscape scan be on the left side when scanned.
+The "-ML" option then reads the patch RGB values properly, ie:
 
-    scanner_refl_fix -ML chart-522_f.tif Pro1000 CG Chart 522 Patches_M2.txt scanner-522_f.txt
+    scanner_refl_fix -ML chart-522_f.tif Pro1000 CG Chart 522 Patches_M2.txt scanner_i1pro2_f.txt
 
-Then we run the following Windows script file, a small Windows script file, to
+Then run the following Windows script file, a small Windows script file, to
 create the ICC profile *scanner_522.icm*.
 
-    makescannerargyll scanner-522_f
+    makescannerargyll scanner_i1pro2_f
 
 
 
@@ -324,52 +342,47 @@ widely available libtiff and its dependents. This repo uses Windows x64 with lib
 While not tested on other OS's it is standard C++ and should port easily to Linux and Apple OS.
 Executing *scanner_refl_fix* shows various usages:
 
-    Version 2.0:
-    Usage: scannerreflfix                  [zero or more options] infile.tif outfile.tif
+    Version 2.1.0
+    Usage: scanner_refl_fix                [zero or more options] infile.tif outfile.tif
       -A                                   Correct Image Already in Adobe RGB
       -B tif file list                     Batch mode, auto renaming with _f
+      -C calibration_file                  Use scanner reflection calibration text file.
       -M[L] charts... measurefile outfile  Make CGATS, chart1.tif ... CGATSmeasure.txt and save CGATS.txt
       -M[L] charts... outfile              Scan patch charts and save CGATs file
-      -P profile                           Attach profile <profile.icc> to image
+      -P profile                           Attach profile <profile.icc>
       -S edge_refl                         ave refl outside of scanned area (0 to 1, default: .85)
       -s reflection.tif                    Calculate statistics on colors with white, gray and black surrounds
       -W                                   Maximize white (Like Relative Col with tint retention)
 
                                            Advanced and Test options
       -b batch_file                        text file with list of command lines to execute
-      -C calibration_file                  Use scanner reflection calibration text file.
       -c scanner_cal.tif  [Y values]       Create scanner calibration file from reference scan.
 
       -F 8|16                              Force 8 or 16 bit tif output]
       -I                                   Save intermediate files
       -N gain                              Restore gain (default half of refl matrix gain)
       -R                                   Simulated scanner by adding reflected light
-      -T                                   Show line numbers and accumulated time.
-      -Z                                   Average multiple input files with No Refl. Correction.
-    scannerreflfix.exe models and removes re-reflected light from an area
+      -T                                   Show line numbers and accumulated time.    scannerreflfix.exe models and removes re-reflected light from an area
     approx 1" around scanned RGB values for the document scanners.
 
 #### Most common commands
 
+The essential, first use of *scanner_refl_fix*, is to generate the file *scanner_cal.txt*
+which contains the scanner's matrix and estimated gamma. It must be in the current working directory.
+It works for all paper types but has to be created for each
+physical scanner model. See earlier description of how to print and scan the calibration file.
+
     scanner_refl_fix -c scanner_cal.tif
 
-This is the essential, first use of *scanner_refl_fix*, as it generates the file *scanner_cal.txt*
-which contains the scanner's matrix and gamma. Once created it just needs to be in the same directory
-that *scanner_refl_fix* is executed from. It works for all paper types but has to be created for each
-physical scanner. See earlier description of how to print and scan the calibration file.
+Normal, day to day use is estimating then removing extra reflected light.
 
     scanner_refl_fix image.tif image_f.tif
 
-Fix the scanner raw tiff file image *image.tif* and save as *image.tif*
-The program corrects reflection error using the file *scanner_cal.txt* which is searched for in the
-current directory or, if not there, in the same directory as scanenr_refl_fix.exe.
-
-
-Fix one or more scanner raw tiff file images and save using the original names with *_f* postpended.
+For processing multiple image files the "-B" option reducing typing. It processes image files and saves
+the corrected images using the original names with *_f* postpended.
 This is most useful for processing lots of RAW scanned images. For instance
 
     scanner_refl_fix -B image1.tif image2.tif ....imageN.tif
-    scanner_refl_fix -B image1.tif
 
 will produce the same result as 
 
@@ -378,32 +391,20 @@ will produce the same result as
     etc
 
 A useful command is combining this with the "-P" option which will attach an ICC profile
-to the corrected image(s)
+to the corrected image(s). The "-P"  option can also be used when correcting a single file.
 
     scanner_refl_fix -P scannerprofile.icm -B image1.tif image2.tif ....imageN.tif
+    scanner_refl_fix -P scannerprofile.icm image1.tif image1_f.tif
 
-The following command can be used to create high quality ICC profiles by combining the RGB values of patches
+The following command can be used to create high quality scanner ICC profiles by combining the RGB values of patches
 with the associated measured CGATs file that contains LAB values. See description of this process earlier.
 
-    scanner_refl_fix -M[L] charts... measurefile outfile
+    scanner_refl_fix -M[L] charts... measurefile.txt outfile.txt
 
-Other options that may be useful.
-
-    -P profile
-
-This can be used to automatically attach an ICC profile to the corrected image file otherwise
-one would have to attach it in Photoshop or other image tool. I usually use this then convert the
-image to a standard colorspace such as sRGB, Adobe RGB, or ProPhoto RGB. The latter two may be
-better depending on whether the scanned image has colors exceeding sRGB.
+The "-S" option can be used to fine tune the actual reflectance of the white area surrounding the scanned image region.
+The default is .85, or 85% of light is reflected and is typical of most papers.
 
     -S edge_refl
-
-This is great when the surrounding area of the image isn't white. An example is scanning a stamp
-where the scanner lid is open and the stamp is placed directly on the glass. A scan of the stamp that is
-trimmed to right around the edges needs to be processed using the *-S 0* to prevent darkening the resulting image.
-Alternately, scan the stamp with 1" margins around stamp edges and don't use the *`S* option.
-
-    -W
 
 This option is handy to simulate conversion where the resulting image is designed to viewed where white
 is RGB 255,255,255. It's kind of similar to Relative Colorimetric except that it retains the tint of
@@ -412,37 +413,41 @@ putting a scanned image on the Web. However, this is only useful if the scanned 
 For instance if you scan an 18% gray card with no white borders and use the "-W" option it will
 turn the card image into a white card.
 
-For best results when reproducing an original this option should
-not be used. Instead use Absolute Colorimetric to print the reflection corrected image.
+    -W
+
+For best results when the image is intended for subsequent printing, this option should not be selected.
+Instead use Absolute Colorimetric to print the reflection corrected image.
+This will produce the closest match to the original document.
 
 ## Installation
 
-The C++ source code for the program and a Solution file for Visual Studio 2019 is included.
+The Release version includes the binary for a Windows 7-10, 64 bit executable.
+The C++ source code for the program and a Solution file for Visual Studio 2019 is also included.
 The source code uses ISO standard C++17 code. It requires the TIFFLIB library which can
-be installed using the Visual Studio vcpkg which also includes libs for Linux and iOS cross-compiling.
+be easily installed using the Visual Studio's vcpkg which also includes libs for Linux and iOS cross-compiling.
 This has been tested on Windows 10 and both x86 and x64. The latter executes somewhat faster.
 
-along with
-the sample images, scans and spectrophotometer measurement files from my printer, a Canon Pro1000.
-Spectrophotometers used were an i1iSis XL2, and I1Pro 2 to generate CGATs RGB/LAB files
-for use with Argyll's free software which Graeme Gill has so generously contributed
-to the color management community.
+Also included are scans and CGATs spectros of i1Pro2 and i1iSis targets used to make profiles for an Epson V850
+using a Canon Pro1000 printer to make the targets. ICC profiles were created using Argyll's free
+software which Graeme Gill has so generously contributed to the color management community.
 
-The V850 scanner input ICC profiles for both reflection fixed, and unfixed using the 2871 patch
-set with the i1iSis and the 522 patch set for the i1Pro 2 are also included.
+4 ICC profiles are included for the V850 scanner for both reflection fixed, and unfixed using the 2871 patch
+set with the i1iSis and the 522 patch set for the i1Pro 2.
 
 ## Performance
 
 To test the performance a chart was made with the 24 colors measured from an X-Rite Colorchecker.
 These were organized using black, white, yellow, red, green, and blue surrounds.
-Also each color, duplicates 10x, was randomly placed along the top and right side.
+Also each color, duplicated 10x, was randomly placed along the top and right side.
 
 <img src="refs/cc.jpg" width="200" title="CC.jpg">
 
 These were printed using Abs. Col. and measured with the i1iSis. They were also scanned
 and tested with and without reflection correction using a range of profile patch counts.
-The following is the result with a very high OBA glossy
-(same as the paper used to calibrate and profile the scanner):
+To gather information on how the number of patches used to create a scanner profile affects accuracy,
+I created sets of profiles with varying numbers of patches as well as a standard IT8 chart.
+The following is the result with a very high OBA glossy paper. Values are mean delta E 1976.
+(Except for the IT8, the same paper was used to calibrate and profile the scanner):
 
     Description                  6 CCs  6 CCs Neutrals   Scattered   Scattered Neutrals
              2871 Patches         2.59       2.69            1.02          0.93
@@ -467,3 +472,16 @@ The following is the result with a very high OBA glossy
 
 Note that the XRite IT8 results are from a batch of chem. photo targets and not individually measured.
 They also differ spectrally from CMYK and inkjet printers and much of the higher error is metameric failure.
+Comparing the spectra from a set of 5 different objects printed with CYMK and 2 different photos printed chemically,
+the chem. photos had spectra very similar to the Colorchecker while all the CMYK printed material closely matched
+the Canon Pro1000 spectrum.
+
+<img src="refs/orange-yellow printer.jpg" width="400" title="Printed orange-yellow">
+
+<img src="refs/orange-yellow-colorchecker.jpg" width="400" title="Colorchecekr orange-yellow">
+
+The V850 exhibits large amounts of metameric error for some colors. the shifts due to re-reflected light.
+This color, orange-yellow, exhibits the most metameric error between prints and the Colorchecker.
+
+Accurate scans for chemical paper photographs can be done by profiling the scanner to charts rendered with
+the same process then measured with a spectrophotometer.

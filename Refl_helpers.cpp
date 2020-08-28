@@ -23,6 +23,64 @@ SOFTWARE.
 #include "Refl_helpers.h"
 #include "algorithm"
 
+using std::string;
+using std::vector;
+using std::array;
+using std::pair;
+using std::cout;
+using std::cin;
+using std::endl;
+
+
+void process_args(vector<string>& args, Options& options)
+{
+    procFlag("-A", args, options.correct_image_in_aRGB);    // correct image from scanner that has been converted to Adobe RGB
+    procFlag("-B", args, options.batch_mode);               // Batch mode, auto rename with _f append to each tif file name
+    procFlag("-b", args, options.batch_file);               // Batch file mode, read commands from file
+    procFlag("-C", args, options.calibration_file);         // Default Scanner reflection calibration text file
+    procFlag("-c", args, options.scanner_cal);              // Scanner reflection calibration tif file
+    procFlag("-F", args, options.force_output_bits);        // Force 16 bit output file. 8 bit input files default to 8 bit output files
+    procFlag("-I", args, options.save_intermediate_files);  // Saves various intermediate files for debugging
+    procFlag("-N", args, options.gain_restore_scale);       // Increase RGB values by percentage of filter DC gain
+    procFlag("-M", args, options.make_rgblab_cgats);        // Make rgb or rgblab cgats file for icc profile creation
+    procFlag("-L", args, options.landscape);                // tif targets are in landscape, default is profile
+    procFlag("-P", args, options.profile_name);             // optional file name of profile to attach to corrected image
+    procFlag("-R", args, options.simulate_reflected_light); // generate an image estimate of scanner's re-reflected light addition.
+    procFlag("-S", args, options.edge_reflectance);         // average reflected light of area outside of scan crop (if black: .01)
+    procFlag("-s", args, options.reflection_stats);         // read in standard scatter 35x29 chart and print metrics
+    procFlag("-T", args, options.print_line_and_time);      // print line number and time since start for each major phase of process
+    procFlag("-W", args, options.adjust_to_detected_white); // Scales output values so that the largest .01% of pixels are maxed (255)
+
+    validate(options.force_output_bits == 0 || options.force_output_bits == 8 || options.force_output_bits == 16, "-F n:   n must be either 8 or 16");
+}
+
+void message_and_exit(string message)
+{
+    cout << message << endl;
+    cout << "Version 2.1.0\n"
+        "Usage: scanner_refl_fix                [zero or more options] infile.tif outfile.tif\n" <<
+        "  -A                                   Correct Image Already in Adobe RGB\n" <<
+        "  -B tif file list                     Batch mode, auto renaming with _f\n" <<
+        "  -C calibration_file                  Use scanner reflection calibration text file.\n" <<
+        "  -M[L] charts... measurefile outfile  Make CGATS, chart1.tif ... CGATSmeasure.txt and save CGATS.txt\n" <<
+        "  -M[L] charts... outfile              Scan patch charts and save CGATs file\n" <<
+        "  -P profile                           Attach profile <profile.icc>\n" <<
+        "  -S edge_refl                         ave refl outside of scanned area (0 to 1, default: .85)\n" <<
+        "  -s reflection.tif                    Calculate statistics on colors with white, gray and black surrounds\n" <<
+        "  -W                                   Maximize white (Like Relative Col with tint retention)\n\n" <<
+        "                                       Advanced and Test options\n" <<
+        "  -b batch_file                        text file with list of command lines to execute\n" <<
+        "  -c scanner_cal.tif  [Y values]       Create scanner calibration file from reference scan.\n\n" <<
+        "  -F 8|16                              Force 8 or 16 bit tif output]\n" <<
+        "  -I                                   Save intermediate files\n" <<
+        "  -N gain                              Restore gain (default half of refl matrix gain)\n" <<
+        "  -R                                   Simulated scanner by adding reflected light\n" <<
+        "  -T                                   Show line numbers and accumulated time.\n" <<
+        "scannerreflfix.exe models and removes re-reflected light from an area\n"
+        "approx 1\" around scanned RGB values for the document scanners.\n";
+    exit(0);
+}
+
 void process_image(const string &image_in_raw, string image_out, Timer& timer)
 {
     if (image_out.length() == 0)
@@ -44,10 +102,9 @@ void process_image(const string &image_in_raw, string image_out, Timer& timer)
     if (firstpass)
         firstpass=false;
 
-    if (options.gain_restore_scale < 0)  // if we haven't forced a gain restore value shift halfway to all white
-        options.gain_restore_scale = .5f * interpolate.gain_adj;
-    else if (options.gain_restore_scale > interpolate.gain_adj) // limit to max refl. light
-        options.gain_restore_scale = interpolate.gain_adj;
+    // Increase RGB values by percentage of filter DC gain to optimize performance against uncorrected profiles
+    // clamp values between 0 and 100%
+    options.gain_restore_scale = std::clamp(options.gain_restore_scale, 0.0f, 100.0f);
 
     ArrayRGB image_in = TiffRead(image_in_raw.c_str(), options.correct_image_in_aRGB ? 2.2f : static_cast<float>(interpolate.gamma));
 
@@ -114,16 +171,17 @@ void process_image(const string &image_in_raw, string image_out, Timer& timer)
             {
                 float tmp;
                 auto adj = bilinear(image_correction, i, ii, reduction, color) * image_in(i, ii, color);
+                auto gain_adj = 1.0f + (options.gain_restore_scale / 100.0f) * interpolate.gain_adj;
                 if (options.simulate_reflected_light)   // Special mode to simulate scanner by adding reflected light
                 {
                     tmp = image_in(i, ii, color) + adj;
-                    tmp /= (1.0f + options.gain_restore_scale);
+                    tmp /= gain_adj;
                 }
                 else
                 {
                     // gain restore  adjusts gain to offset reduction from re-reflected light subtraction
                     tmp = image_in(i, ii, color) - adj;
-                    tmp = tmp * (1.0f + options.gain_restore_scale);
+                    tmp = tmp * gain_adj;
                 }
 
                 image_in(i, ii, color) = std::clamp(tmp, 0.f, 1.f);
@@ -155,35 +213,15 @@ void process_image(const string &image_in_raw, string image_out, Timer& timer)
     }
 
     if (options.print_line_and_time) cout << __LINE__ << "  " << timer.stop() << endl;
-    if (options.force_ouput_bits == 16)
+    if (options.force_output_bits == 16)
         image_in.from_16bits = true;
-    else if (options.force_ouput_bits == 8)
+    else if (options.force_output_bits == 8)
         image_in.from_16bits = false;
 
     TiffWrite(image_out.c_str(), image_in, options.profile_name);
     if (options.print_line_and_time) cout << __LINE__ << "  " << timer.stop() << endl;
 }
 
-void process_args(vector<string>& args, Options& options)
-{
-    procFlag("-A", args, options.correct_image_in_aRGB);
-    procFlag("-B", args, options.batch_mode);
-    procFlag("-b", args, options.batch_file);
-    procFlag("-C", args, options.calibration_file);
-    procFlag("-c", args, options.scanner_cal);
-    procFlag("-F", args, options.force_ouput_bits);
-    procFlag("-I", args, options.save_intermediate_files);
-    procFlag("-N", args, options.gain_restore_scale);
-    procFlag("-M", args, options.make_rgblab_cgats);
-    procFlag("-L", args, options.landscape);
-    procFlag("-P", args, options.profile_name);
-    procFlag("-R", args, options.simulate_reflected_light);
-    procFlag("-S", args, options.edge_reflectance);
-    procFlag("-s", args, options.reflection_stats);
-    procFlag("-T", args, options.print_line_and_time);
-    procFlag("-W", args, options.adjust_to_detected_white);
-    validate(options.force_ouput_bits == 0 || options.force_ouput_bits == 8 || options.force_ouput_bits == 16, "-F n:   n must be either 8 or 16");
-}
 
 pair<vector<string>, Options> process_a_command_line(vector<string> args)
 {
@@ -201,35 +239,36 @@ pair<vector<string>, Options> process_a_command_line(vector<string> args)
     return std::make_pair(args, options);
 }
 
-void message_and_exit(string message)
+
+/// <summary>
+/// Print pixel patch variations in deciles
+///  Significant changes in the first 4 numbers may indicate alignment issues
+/// </summary>
+/// <param name="patches">PatchChart class with patch info</param>
+void PrintPatchStats(const PatchCharts& patches)
 {
-    cout << message << endl;
-    cout << "Version 2.0:\n"
-        "Usage: scannerreflfix                  [zero or more options] infile.tif outfile.tif\n" <<
-        "  -A                                   Correct Image Already in Adobe RGB\n" <<
-        "  -B tif file list                     Batch mode, auto renaming with _f\n" <<
-        "  -M[L] charts... measurefile outfile  Make CGATS, chart1.tif ... CGATSmeasure.txt and save CGATS.txt\n" <<
-        "  -M[L] charts... outfile              Scan patch charts and save CGATs file\n" <<
-        "  -P profile                           Attach profile <profile.icc>\n" <<
-        "  -S edge_refl                         ave refl outside of scanned area (0 to 1, default: .85)\n" <<
-        "  -s reflection.tif                    Calculate statistics on colors with white, gray and black surrounds\n" <<
-        "  -W                                   Maximize white (Like Relative Col with tint retention)\n\n" <<
-        "                                       Advanced and Test options\n" <<
-        "  -b batch_file                        text file with list of command lines to execute\n" <<
-        "  -C calibration_file                  Use scanner reflection calibration text file.\n" <<
-        "  -c scanner_cal.tif  [Y values]       Create scanner calibration file from reference scan.\n\n" <<
-        "  -F 8|16                              Force 8 or 16 bit tif output]\n" <<
-        "  -I                                   Save intermediate files\n" <<
-        "  -N gain                              Restore gain (default half of refl matrix gain)\n" <<
-        "  -R                                   Simulated scanner by adding reflected light\n" <<
-        "  -T                                   Show line numbers and accumulated time.\n" <<
-        "  -Z                                   Average multiple input files with No Refl. Correction.\n" <<
-        "scannerreflfix.exe models and removes re-reflected light from an area\n"
-        "approx 1\" around scanned RGB values for the document scanners.\n";
-    exit(0);
+    printf("\n\nAverage regional pixel deviation based on proximity to center -> edges\n");
+    printf("\n  Deciles:  Center                     Half                        Edge\n");
+    for (int i = 0; i < patches.charts.size(); i++)
+    {
+        array<float, 10> errs{};
+        for (int row = 0; row < patches.charts[i].patch_data.size(); row++)
+            for (int col = 0; col < patches.charts[i].patch_data[0].size(); col++)
+                for (int iii = 0; iii < 10; iii++)
+                    errs[iii] += patches.charts[i].patch_data[row][col].errs[iii] / 10;
+        printf("Chart %d:  ", i);
+        for (auto x : errs)
+            printf("%6.1f", x);
+        printf("\n");
+    }
 }
 
-void make_rgblab(std::vector<std::string> cmdLine)
+/// <summary>
+/// Process command line list of tif image files, optional CGATs measurement
+/// file with L*a*b* values, and file to create CGATs RGB or RGBLAB
+/// </summary>
+/// <param name="cmdLine"></param>
+void make_rgblab(vector<std::string> cmdLine)
 {
     PatchCharts patches;
     validate(file_is_tif(cmdLine[0]), "Scanned target image must be \".tif\" file");
@@ -243,6 +282,7 @@ void make_rgblab(std::vector<std::string> cmdLine)
             << ", Cols:" << patches.charts[patches.charts.size() - 1].cols << "\n";
         cmdLine.erase(cmdLine.begin());
     }
+    PrintPatchStats(patches);
     if (options.save_intermediate_files)        // save standard deviations of RGB values if requested
     {
         auto file=file_parts(cmdLine[cmdLine.size()-1]);
@@ -252,18 +292,27 @@ void make_rgblab(std::vector<std::string> cmdLine)
     if (cmdLine.size()==1)  // no measurement file
     {
         cgats_utilities::write_cgats_rgb(patches.rgb255, cmdLine[0]);
-        std::cout << "Output RGB CGATs file:" << cmdLine[0] << ", Patches:" << patches.rgb255.size() << "\n";
+        std::cout << "\nOutput RGB CGATs file:" << cmdLine[0] << ", Patches:" << patches.rgb255.size() << "\n";
     }
     else
     {
         validate(file_is_txt(cmdLine[0]), "Scanned target measurement file must be \".txt\" file");
-        std::cout << "and associated CGATs measurement text file: " << cmdLine[0] << '\n';
+        std::cout << "\nAssociated CGATs measurement text file: " << cmdLine[0] << "\n\n";
         auto&& [rgbout_print, labout_print] = cgats_utilities::separate_rgb_lab(cgats_utilities::read_cgats_rgblab(cmdLine[0]));
-        if (labout_print.size() != patches.rgb255.size())
-        {
-            std::cout << "tiff patch totals != CGATs meas. file size\n";
-            exit(-1);
+        
+        // if last column has unused patches at end, resize
+        if (labout_print.size() != patches.rgb255.size()) {
+            if (labout_print.size() < patches.rgb255.size() - patches.charts.back().rows + 1)
+            {
+                std::cout << "tiff patch totals != CGATs meas. file size\n";
+                exit(-1);
+            }
+            else
+            {
+                patches.rgb255.resize(labout_print.size());
+            }
         }
+
         patches.rgblab_print = cgats_utilities::combine_rgb_lab(rgbout_print,labout_print);
         patches.add_lab_to_rgb(labout_print);
         validate(file_is_txt(cmdLine[1]), "Scanned rgblab output file must be \".txt\" file");
@@ -294,6 +343,12 @@ void make_rgblab(std::vector<std::string> cmdLine)
     }
 }
 
+
+/// <summary>
+/// Process scanner calibration tif file to generate scanner_cal.txt
+/// </summary>
+/// <param name="cmdLine"></param>
+/// <param name="options"></param>
 void calibrate_scanner(vector<string>& cmdLine, Options& options)
 {
     // optionally, CIE "Y" values (scaled to 100) can be included
@@ -303,12 +358,17 @@ void calibrate_scanner(vector<string>& cmdLine, Options& options)
     // measured with a spectrophotometer
     validate(file_is_tif(cmdLine[0]), "Scanner calibration image must be tif file");
     cout << "\nReading scanner reflection calibration file and creating \"scanner_cal.txt\"\n";
+    
+    // 0 args: Rel Col determined gamma
+    // 1 arg:  gamma specified, ie: 1.7
+    // 2-5 args: CIE Y values for neutral squares white->gray
+    std::vector<float> optional_gamma_args;
     while (cmdLine.size() > 1) {
-        options.Y.push_back(std::stof(cmdLine[1]));     // store values of measured CIE "Y" reflectances
+        optional_gamma_args.push_back(std::stof(cmdLine[1]));
         cmdLine.erase(cmdLine.begin() + 1);
     }
     ScanCalibration scan_cal;
-    scan_cal.load(cmdLine[0], options.Y);
+    scan_cal.load(cmdLine[0], optional_gamma_args);
 }
 
 void get_scatter_stats(string filename) //  file is tif scatter chart
@@ -356,4 +416,7 @@ void get_scatter_stats(string filename) //  file is tif scatter chart
             for (int iii = 0; iii < 3; iii++)       // backgrounds: white, gray, black
                 std_cum.clk(stats[i][ii][iii].std());
     printf("Average of all channel stds: %5.2f\n", std_cum.ave());
+    PrintPatchStats(patches);
 }
+
+//void PrintPatchStats(const PatchCharts& patches)

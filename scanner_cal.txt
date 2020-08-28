@@ -1,4 +1,4 @@
-scanner "scan_calibration_glossy.tif"  "Jun 13 2020 19:29:40"
+scanner "scan_calibration_glossy.tif"  "Aug 12 2020 13:26:14"
 gamma 1.585
 grid_size 19
 grid_dpi 10

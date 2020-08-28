@@ -1,4 +1,3 @@
-#pragma once
 /*
 Copyright (c) <2020> <doug gray>
 
@@ -21,6 +20,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#ifndef REFL_HELPERS_H
+#define REFL_HELPERS_H
+
 #include <vector>
 #include <iostream>
 #include <array>
@@ -37,19 +39,14 @@ SOFTWARE.
 #include "cgats.h"
 #include "statistics.h"
 
-
-using std::vector;
-using std::string;
-using std::cout;
-using std::cin;
-using std::endl;
-
 extern struct Options options;
 
-void process_image(const string &image_in_raw, string image_out, Timer& timer);
-void process_args(vector<string>& args, Options& options);
-pair<vector<string>, Options> process_a_command_line(vector<string> args);
-void message_and_exit(string message);
-void make_rgblab(vector<string> cmdLine);
-void calibrate_scanner(vector<string>& cmdLine, Options& options);
-void get_scatter_stats(string filename);
+void process_image(const std::string &image_in_raw, std::string image_out, Timer& timer);
+void process_args(std::vector<std::string>& args, Options& options);
+std::pair<std::vector<std::string>, Options> process_a_command_line(std::vector<std::string> args);
+void message_and_exit(std::string message);
+void make_rgblab(std::vector<std::string> cmdLine);
+void calibrate_scanner(std::vector<std::string>& cmdLine, Options& options);
+void get_scatter_stats(std::string filename);
+
+#endif

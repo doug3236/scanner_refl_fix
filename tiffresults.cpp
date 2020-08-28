@@ -30,6 +30,13 @@ SOFTWARE.
 #include <algorithm>
 #include "interpolate.h"
 
+using std::vector;
+using std::array;
+using std::ios_base;
+using std::ios;
+using std::string;
+using std::ifstream;
+using std::tuple;
 
 ArrayRGB arrayRGBChangeDPI(const ArrayRGB& imag_in, int new_dpi)
 {
@@ -80,6 +87,11 @@ ArrayRGB TiffRead(const char *filename, float gamma)
     {
         rgb.profile.resize(prof_size);
         memcpy(rgb.profile.data(), prof_data, prof_size);
+        
+        // code to extract ICC profiles
+        //FILE *fp=fopen("test.icm", "wb");
+        //fwrite(prof_data, 1, prof_size, fp);
+        //fclose(fp);
     }
 
     size = width*height;
@@ -170,6 +182,19 @@ void TiffWrite(const char* file, const Array2D<float> rgb)
         for (int ii = 0; ii < rgb.nc; ii++)
             rgb3(i,ii,0)=rgb3(i,ii,1)=rgb3(i,ii,2)=rgb(i,ii);
     TiffWrite(file, rgb3,"");
+}
+
+void TiffWrite(const char* file, const Array2D<std::array<float,3>> rgb, const string &profile)
+{
+    ArrayRGB rgb3(rgb.nr, rgb.nc, 200, false, 1.0);
+    for (int i = 0; i < rgb.nr; i++)
+        for (int ii = 0; ii < rgb.nc; ii++)
+        {
+            rgb3(i, ii, 0) = rgb(i, ii)[0];
+            rgb3(i, ii, 1) = rgb(i, ii)[1];
+            rgb3(i, ii, 2) = rgb(i, ii)[2];
+        }
+    TiffWrite(file, rgb3, profile);
 }
 
 void TiffWrite(const char *file, const ArrayRGB &rgb, const string &profile)

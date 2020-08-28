@@ -20,7 +20,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#pragma once
+#ifndef PATCHCHART_H
+#define PATCHCHART_H
+
 #include <iostream>
 #include "tiffresults.h"
 #include "statistics.h"
@@ -28,42 +30,48 @@ SOFTWARE.
 #include "interpolate.h"
 #include "validation.h"
 
-using V3 = array<double, 3>;    // used to hold RGB, LAB or XYZ values
-using V6 = array<double, 6>;      // used to hold RGBLAB value sets
+using V3 = std::array<float, 3>;   // used to hold RGB, LAB or XYZ values
+using V6 = std::array<float, 6>;   // used to hold RGBLAB value sets
 
+/// <summary>
+/// pixel and distance from patch edge
+/// </summary>
 struct BlockVal {
-    V3 pixel;
-    int dist;
+    V3 pixel;   // rgb pixel
+    int dist;   // minimum distance of this pixel to patch boundary
 };
 
+/// <summary>
+/// Average rgb, err of center patch
+/// </summary>
 struct PatchStats {
-    V3 rgb{};
-    V3 est_err{};
-    vector<double> std_segment;
-    vector<double> std_cum;
-    vector<std::pair<V3,V3>> aves;
+    V3 rgb{};           // average RGB of center, de-noised, patches
+    V3 rgb_err{};       // std dev of center, de-noised, patches
+    std::array<float,10> errs{};
+    std::vector<std::pair<V3,V3>> aves; // used for debugging
 };
 
 constexpr int maxRowsAndCols=50;
 constexpr int minRowsAndCols=8;
 
-typedef pair<size_t, size_t> VectorLocs;
+typedef std::pair<size_t, size_t> VectorLocs;
 
-Array2D<V3> FromTiffReader(string arg);
+Array2D<V3> FromTiffReader(std::string arg);
 Array2D<float> get_min_rgb(const Array2D<V3>& rgbin);
-pair<size_t, size_t> get_horizontal_slice_aves(const Array2D<float>& rgb);
-pair<size_t, size_t> get_vertical_slice_aves(const Array2D<float>& rgb);
-PatchStats process_sample(const vector<BlockVal>& sample);
-vector<vector<PatchStats>> process_samples(const vector<vector<vector<BlockVal>>>& samples);
-vector<double> find_patch_metric(vector<double>& v, int start);
+PatchStats process_sample(const std::vector<BlockVal>& sample);
+std::vector<std::vector<PatchStats>> process_samples(const std::vector<std::vector<std::vector<BlockVal>>>& samples);
+std::vector<double> find_patch_metric(std::vector<double>& v, int start);
 VectorLocs get_rows_and_columns(const Array2D<V3>& rgb, VectorLocs hs, VectorLocs vs);
-vector<vector<PatchStats>> extract_patch_data(const Array2D<V3>& rgb);
+std::vector<std::vector<PatchStats>> extract_patch_data(const Array2D<V3>& rgb);
 
 inline V3 operator+(const V3& x, const V3& y) { return V3{ x[0] + y[0], x[1] + y[1], x[2] + y[2] }; }
 inline V3 operator-(const V3& x, const V3& y) { return V3{ x[0] - y[0], x[1] - y[1], x[2] - y[2] }; }
-inline double dist(V3 x) { return std::sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]); }
-inline double dist(V3 x, V3 y) { return dist(x - y); }
+inline float dist(V3 x) { return std::sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]); }
+inline float dist(V3 x, V3 y) { return dist(x - y); }
 
+/// <summary>
+/// Accumulates statistics over RGB pixels
+/// </summary>
 struct RGB_Stat {
     Statistics rgb[3];
     void clk(V3 pix) { rgb[0].clk(pix[0]); rgb[1].clk(pix[1]); rgb[2].clk(pix[2]); }
@@ -78,7 +86,9 @@ struct RGB_Stat {
 };
 
 
-
+/// <summary>
+/// Collection of tiff charts and associated data
+/// </summary>
 class PatchCharts   // collection of tif charts
 {
 public:
@@ -86,20 +96,20 @@ public:
     public:
         ArrayRGB tiff_rgb{};
         Array2D<V3> rgb{ 0, 0 };
-        vector<vector<PatchStats>> patch_data;
-        vector<V3> rgb255{};
+        std::vector<std::vector<PatchStats>> patch_data;
+        std::vector<V3> rgb255{};
         int rows{};
         int cols{};
-        string err_info{};
+        std::string err_info{};
     };
-    vector<PatchChart> charts{};
-    string err_info{};          // overall error inf if not blank
-    vector<V3> rgb255{};        // patch scan RGB values
-    vector<V3> rgb_std_255{};   // patch scan RGB values
-    vector<V6> rgblab{};        // optional: patch scan RGB with measurement Lab values
-    vector<V6> rgblab_print{};  // optional: print RGB
+    std::vector<PatchChart> charts{};
+    std::string err_info{};          // overall error inf if not blank
+    std::vector<V3> rgb255{};        // patch scan RGB values
+    std::vector<V3> rgb_std_255{};   // patch scan RGB values
+    std::vector<V6> rgblab{};        // optional: patch scan RGB with measurement Lab values
+    std::vector<V6> rgblab_print{};  // optional: print RGB
 
-    bool init(string tiff_filename, bool landscape);                // add a tif file
-    bool add_lab_to_rgb(const vector<V3> & lab);    // add in lab meas. data to rgb
+    bool init(std::string tiff_filename, bool landscape);                // add a tif file
+    void add_lab_to_rgb(const std::vector<V3> & lab);    // add in lab meas. data to rgb
 };
-
+#endif

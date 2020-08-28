@@ -1,4 +1,4 @@
-scanner "scan_calibration_glossy.tif"  "May 14 2020 20:26:20"
+scanner "Epson V850"  "Aug 11 2020 20:29:40"
 gamma 1.585
 grid_size 19
 grid_dpi 10

@@ -29,6 +29,13 @@ SOFTWARE.
 #include "tiffresults.h"
 #include "ScannerReflFix.h"
 
+using std::vector;
+using std::array;
+using std::ios_base;
+using std::ios;
+using std::string;
+using std::ifstream;
+
 extern Options options;
 
 // for debugging and printing matrixes for checking with Matlab code
@@ -61,22 +68,21 @@ vector<string> parse(const string& s) {
 
 
 // Parse file returning a vector<vector<string>> tokens. vector<string> tokenizes one line
-vector<vector<string>> tokenize_file(const string& filename)
+std::vector<std::vector<string>> tokenize_file(const std::string& filename)
 {
 	std::ifstream infile(filename);
 	if (infile.fail())
 		throw std::invalid_argument(string("Read Open failed, File: ") + filename);
 	string s;
-	vector<vector<string>> ret;
+	std::vector<std::vector<string>> ret;
 	while (getline(infile, s))
 	{
-		vector<string> line_words = parse(s);
+		std::vector<std::string> line_words = parse(s);
 		if (line_words.size() != 0)             // skip empty lines
 			ret.push_back(line_words);
 	}
 	return ret;
 }
-
 
 // create interpolation matrix with dpi_out resolution
 Array2D<float> InterpolateRefl::get_interpolation_array(int dpi_out) {
@@ -100,36 +106,33 @@ Array2D<float> InterpolateRefl::get_interpolation_array(int dpi_out) {
 	return out;
 }
 
-
 // Initialize reflection interpolation quadrant from external file or default
-bool InterpolateRefl::read_init_file(string filename, bool print) {
-	if (!std::filesystem::exists(filename) && std::filesystem::exists(options.executable_directory+filename))
-		filename=options.executable_directory+filename;
+bool InterpolateRefl::read_init_file(std::string filename, bool print) {
 	if (std::filesystem::exists(filename)){
 		if (print)
 			std::cout << "Using Adjustment file: " << filename << "\n";
-		vector<vector<string>> file_data = tokenize_file(filename);
+		std::vector<std::vector<std::string>> file_data = tokenize_file(filename);
 		if (file_data[0][0]!= "scanner")
 			throw "Scanner adj. file not recognized";
 		adj_file=file_data[0][1];
 		if (file_data[0].size() == 3)
-			printf("Calibration file: %s\n", file_data[0][2].c_str());
+			printf("Scanner ID:%s, Date:%s\n", file_data[0][1].c_str(), file_data[0][2].c_str());
 		file_data.erase(file_data.begin());
 		if (file_data[0][0]!= "gamma" || file_data[1][0]!= "grid_size" || file_data[2][0]!= "grid_dpi")
 			throw ("Initialization file format error");
 		gamma = static_cast<float>(stod(file_data[0][1]));
-		grid_size = stoi(file_data[1][1]);
-		dpi_in = stof(file_data[2][1]);
+		grid_size = std::stoi(file_data[1][1]);
+		dpi_in = std::stof(file_data[2][1]);
 		adj = Array2D<float>(grid_size,grid_size);
 		for (int i = 0; i < grid_size; i++)
 			for (int ii = 0; ii < grid_size; ii++)
-				adj[i][ii]=stof(file_data[3+i][ii]);
+				adj[i][ii]= std::stof(file_data[3+i][ii]);
 		gain_adj=adj.ave()*adj.nr*adj.nc;
 		if (print)
 			printf("Reflected light gain: %4.1f%%,  Gamma=%4.2f\n", 100.0f*gain_adj, gamma);
 	}
 	else
-		throw "scanner_cal.txt not detected";
+		throw "Adjustment file not detected";
 	return true;
 }
 
@@ -160,9 +163,9 @@ Array2D<float> expand(Array2D<float>& adj, float dpi_in, float dpi_out)
 	return ret;
 }
 
-Extants get_global_extants(const Array2D<float> &image)
+Array2D<float>::Extants get_global_extants(const Array2D<float> &image)
 {
-	Extants corners;
+	Array2D<float>::Extants corners;
 	int b = image.nr;
 	int r = image.nc;
 	for (int i = 0; i < b/2; i++)

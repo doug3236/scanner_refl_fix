@@ -22,6 +22,7 @@ SOFTWARE.
 // Disable errors for fread and fwrite posix functions
 #define _CRT_SECURE_NO_WARNINGS
 
+#include "array2d.h"
 #include <fstream>
 #include <utility>
 #include <sstream>
@@ -29,8 +30,13 @@ SOFTWARE.
 
 #include "cgats.h"
 #include "validation.h"
+#include <algorithm>
 
 #pragma warning(disable : 4996)
+
+using std::vector;
+using std::string;
+using std::pair;
 
 namespace cgats_utilities {
 
@@ -121,9 +127,9 @@ namespace cgats_utilities {
             for (size_t ii = 0; ii < 3; ++ii)
             {
                 validate(data.data_ptr[i].size() == data.fields.size(), "Bad CGATS Format, num of vals <> field count");
-                rgb_lab[i][ii] = stod(data.data_ptr[i][data.rgb_loc + ii]);
+                rgb_lab[i][ii] = stof(data.data_ptr[i][data.rgb_loc + ii]);
                 if (include_lab && data.num_of_fields != data.lab_loc)
-                    rgb_lab[i][ii+3] = stod(data.data_ptr[i][data.lab_loc + ii]);
+                    rgb_lab[i][ii+3] = stof(data.data_ptr[i][data.lab_loc + ii]);
             }
         }
         return rgb_lab;
@@ -320,7 +326,7 @@ namespace cgats_utilities {
     vector<DuplicateStats> remove_duplicates(vector<V6> vals)
     {
         vector<DuplicateStats> ret;
-        sort(vals.begin(), vals.end(), less_than);
+        std::sort(vals.begin(), vals.end(), less_than);
         for (size_t i = 0; i < vals.size(); i++)
         {
             DuplicateStats same;

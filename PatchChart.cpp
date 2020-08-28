@@ -24,6 +24,11 @@ SOFTWARE.
 #include "PatchChart.h"
 #pragma warning (disable : 4018 )
 
+using std::vector;
+using std::string;
+using std::pair;
+using std::array;
+
 // Read RGB from tif file into a 2D Array
 Array2D<V3> FromTiffReader(string arg)
 {
@@ -39,7 +44,11 @@ Array2D<V3> FromTiffReader(string arg)
     return rgbout;
 }
 
-// Get minimum of r, g, or b in an rgb array
+/// <summary>
+/// Get minimum of r, g, or b in an rgb array as gray scale array
+/// </summary>
+/// <param name="rgbin"></param>
+/// <returns></returns>
 Array2D<float> get_min_rgb(const Array2D<V3>& rgbin)
 {
     Array2D<float> rgbout(rgbin.nr, rgbin.nc);
@@ -52,58 +61,71 @@ Array2D<float> get_min_rgb(const Array2D<V3>& rgbin)
     return rgbout;
 }
 
-// return top and bottom of image assuming white border
-// if flip==true, return left and right by rotating image 90 degrees clockwise
+float get_tilt(const Array2D<float>& v, int offset)
+{
+    return 0;
+}
+
+
+struct AveStd { float ave, std; };
+
+int get_boundary(const vector<AveStd>& v, float min, float max)
+{
+    for (int i = int(v.size()) / 3; i > 0; i--)
+    {
+        // allow for 15% reduction from max white value for white border detection
+        if (v[i].ave > .85 * max && v[i].std < .05)
+        {
+            for (int ii = 0; ii < 20; ii++)
+                if (v[i + ii].ave < (v[i].ave + v[i + 20].ave) / 2.0f)
+                    return i + ii;
+        }
+    }
+    return 1;
+};
+
+/// <summary>
+/// Get top and bottom boundary of patches
+/// </summary>
+/// <param name="v"></param>
+/// <returns></returns>
+pair<int,int> strips_info(const Array2D<float>& v) {
+    auto minmax = std::minmax_element(v.v.begin(), v.v.end());
+    vector<AveStd> strips(v.nr);
+    for (int i = 0; i < v.nr; i++)
+    {
+        Statistics strip;
+        for (int ii = 0; ii < v.nc; ii++)     // copy a row
+            strip.clk(v(i, ii));
+        strips[i].ave = strip.ave();
+        strips[i].std = strip.std();
+    }
+    int top = get_boundary(strips, *minmax.first, *minmax.second);
+    std::reverse(strips.begin(), strips.end());
+    int bottom = int(strips.size()) - get_boundary(strips, *minmax.first, *minmax.second);
+    return std::pair<int, int>(top, bottom);
+};
+
+
+/// <summary>
+/// return top and bottom of image assuming white border
+/// </summary>
+/// <param name="g_in"></param>
+/// <param name="flip"></param> if true, rotate image 90 degrees clockwise
+/// <returns></returns>
 pair<size_t, size_t> get_patch_ends(const Array2D<float>& g_in, bool flip)
 {
-    struct AveStd { float ave, std; };
-    auto strips_info = [](const Array2D<float>& v) {
-        //auto printx = [](const vector<AveStd>& v) {
-        //    string fname="test\\patch_ends";
-        //    static string fname_end = "0.txt";
-        //    FILE* fp = fopen((fname+fname_end).c_str(), "wt");
-        //    for (auto x : v)
-        //        fprintf(fp, "%8.5f %8.5f\n", x.ave, x.std);
-        //    fclose(fp);
-        //    fname_end[0]++;
-        //};
-        float v_max=*std::max_element(v.v.begin(), v.v.end());
-        float v_min=*std::min_element(v.v.begin(), v.v.end());
-        auto get_boundary = [v_max, v_min](const vector<AveStd>& v)
-        {
-            for (int i = int(v.size()) / 3; i > 0; i--)
-            {
-                // allow for 15% reduction from max white value for white border detection
-                if (v[i].ave > .85 * v_max && v[i].std < .05)
-                {
-                    for (int ii = 0; ii < 20; ii++)
-                        if (v[i+ii].ave  < (v[i].ave+v[i+20].ave)/2.0f)
-                            return i+ii;
-                }
-            }
-            return 1;
-        };
-        vector<AveStd> strips(v.nr);
-        for (int i = 0; i < v.nr; i++)
-        {
-            Statistics strip;
-            for (int ii = 0; ii < v.nc; ii++)     // copy a row
-                strip.clk(v(i, ii));
-            strips[i].ave = strip.ave();
-            strips[i].std = strip.std();
-        }
-        int top = get_boundary(strips);
-        std::reverse(strips.begin(), strips.end());
-        int bottom = int(strips.size()) - get_boundary(strips);
-        //printx(strips);
-        return std::pair<int,int>(top,bottom);
-    };
     auto g = flip ? transpose(g_in) : g_in;
     //TiffWrite("test\\test_image.tif", g);
     return strips_info(g);
 }
 
-vector<std::pair<V3, V3>> get_dist_means(vector<BlockVal> const sorted_pixels)
+/// <summary>
+/// get ave and std for each set of pixels at fixed distances from patch edges
+/// </summary>
+/// <param name="sorted_pixels"></param>    sorted by descending distance from edge
+/// <returns></returns>
+vector<std::pair<V3, V3>> get_dist_means(vector<BlockVal> const &sorted_pixels)
 {
     vector<std::pair<V3,V3>> ret(sorted_pixels[0].dist+1);
     int high = sorted_pixels[0].dist;
@@ -126,55 +148,52 @@ vector<std::pair<V3, V3>> get_dist_means(vector<BlockVal> const sorted_pixels)
 }
 
 // get statistics from a patch of pixels discarding outliers
+
+/// <summary>
+/// PatchStats::rgb has best average value of inner patch pixels
+/// </summary>
+/// <param name="sample"> vector containing pixel and distance from nearest edge
+/// sorted starting from center pixels to edge pixels</param>
+/// <returns></returns>
 PatchStats process_sample(const vector<BlockVal>& sample)
 {
+    const float thresh_ctr = .3f;   // thresh_ctr of pixels that are closest to center
+    const float thresh_std = .7f;   // thresh_std of lowest errs from the mean to discard lint/fiber reflections
     PatchStats ret;
-    ret.aves = get_dist_means(sample);
+    //ret.aves = get_dist_means(sample);
 
-    vector<double> std_segment;
-    vector<double> std_cum;
     RGB_Stat stats;
-    RGB_Stat dist1, distcum;
+    RGB_Stat dist1;
 
-    auto ps = sample.begin();
-    auto pe = sample.end();
-    for (; ps != sample.end(); ps++)    // 
-    {
-        dist1.clk(ps->pixel);
-        distcum.clk(ps->pixel);
-        if (ps == sample.end() - 1 || ps->dist != (ps + 1)->dist)
-        {
-            std_segment.push_back(dist1.norm());
-            std_cum.push_back(distcum.norm());
-            dist1.reset();
-        }
-    }
-    reverse(std_cum.begin(), std_cum.end());
-    reverse(std_segment.begin(), std_segment.end());
-    ret.std_cum = std_cum;
-    ret.std_segment = std_segment;
-    static int passcnt;
-    //printf("%3d  %7.4f  %7.4f  %7.4f\n", ++passcnt, std_segment[0], std_segment[4], std_segment[10]);
-
-    size_t breakpoint = sample.size() / 2;    // include half of pixels closest to center
+    size_t breakpoint = int(round(thresh_ctr*sample.size()));
     while (sample[breakpoint].dist == sample[breakpoint + 1].dist)
         breakpoint++; // forward to next dist increment
+    vector<pair<V3, float>> rgb_set(breakpoint);
     for (size_t i = 0; i < breakpoint; i++)
         stats.clk(sample[i].pixel);
     V3 ave = stats.ave();
-    vector<PatchStats> set; set.reserve(breakpoint);
     for (size_t i = 0; i < breakpoint; i++)
-        set.push_back(PatchStats{ sample[i].pixel, static_cast<float>(dist(sample[i].pixel, ave)) });
+        rgb_set[i] = pair<V3, float>{ sample[i].pixel, dist(sample[i].pixel, ave)};
 
     // sort based on error from mean then remove the largest 1/3
-    sort(set.begin(), set.end(), [](const PatchStats& a, const PatchStats& b) {return a.est_err < b.est_err; });
-    set.resize(2 * set.size() / 3);
+    sort(rgb_set.begin(), rgb_set.end(), [](const pair<V3, float>& a, const pair<V3, float>& b) {return a.second < b.second; });
+    rgb_set.resize(int(round(rgb_set.size()*thresh_std)));
 
     RGB_Stat final;
-    for (auto& x : set)
-        final.clk(x.rgb);
+    for (auto& x : rgb_set)
+        final.clk(x.first);
     ret.rgb = final.ave();
-    ret.est_err = final.std();
+    ret.rgb_err = final.std();
+
+    // look at variation in deciles from closest to center to edges
+    int steps = int(sample.size() / ret.errs.size());
+    for (int i = 0; i < ret.errs.size(); i++)
+    {
+        RGB_Stat stat;
+        for (int ii = i * steps; ii < (i + 1) * steps; ii++)
+            stat.clk(sample[ii].pixel);
+        ret.errs[i] = dist(stat.std());
+    }
     return ret;
 }
 
@@ -249,15 +268,59 @@ VectorLocs get_rows_and_columns(const Array2D<V3>& rgb, VectorLocs hs, VectorLoc
 }
 
 
-// calculate row and col counts then extract data into a 2D grid or patch info
-vector<vector<PatchStats>> extract_patch_data(const Array2D<V3>& rgb)
+
+Array2D<V3> refine_image(const Array2D<V3> &rgbin, const Array2D<float> rgbmin, const VectorLocs vs, const VectorLocs hs)
 {
-    Array2D rgbmin = get_min_rgb(rgb);
-    auto vs = get_patch_ends(rgbmin,false);     // top,bottom
+    auto rgb = rgbin;
+    // if not enough white space to align assume proper registration
+    if (vs.first < 10 || hs.first < 10 || rgbmin.nr-vs.second < 10 || rgbmin.nc - hs.second < 10)
+        return rgb;
+    auto spread = int(std::max(vs.second - vs.first, hs.second - hs.first)+1);
+    vector<vector<int>> skew(19, vector<int>(spread));
+    for (int angle_i = -9; angle_i <= 9; angle_i++)
+        for (int i = 0; i < spread; i++)
+            skew[angle_i+9][i] = int(std::round(angle_i * (float(spread/2-i) / (spread/2))));
+
+    array<array<float, 19>, 19> s{};
+    auto first_v = (spread / 2) - (hs.second - hs.first) / 2;
+    auto first_h = (spread / 2) - (vs.second - vs.first) / 2;
+    for (int angle_i = -9; angle_i <= 9; angle_i++)
+        for (int offset = -9; offset <= 9; offset++)
+        {
+            Statistics variation;
+            for (size_t i = hs.first; i < hs.second; i++)
+            {
+                variation.clk(rgbmin(int(offset + vs.first + skew[angle_i + 9][i - hs.first+first_v]), int(i - hs.first)));
+            }
+            s[angle_i + 9][offset + 9] = variation.std();
+        }
+    // min at s[15] for .5 degree tilt CCW
+    array<float, 19> errsum;
+    for (int i = 0; i < 19; i++)
+        errsum[i] = std::accumulate(s[i].begin(), s[i].begin() + 9, 0.0f);
+    auto angle_fit = std::min_element(errsum.begin(), errsum.end()) - errsum.begin();
+    std::fill(rgb.v.begin(), rgb.v.end(), V3{ 1.0f,1.0f, 1.0f });
+
+    for (int row=int(vs.first); row < int(vs.second); row++)
+        for (int col = int(hs.first); col < int(hs.second); col++)
+        {
+            rgb(row, col) = rgbin(row+skew[angle_fit][col-hs.first+first_v],
+                                  col+skew[18-angle_fit][row-vs.first+first_h]);
+        }
+    //TiffWrite("test\\testx.tif", rgb,"");
+    return rgb;
+}
+
+// calculate row and col counts then extract data into a 2D grid of patch info
+vector<vector<PatchStats>> extract_patch_data(const Array2D<V3>& rgbin)
+{
+    Array2D<float> rgbmin = get_min_rgb(rgbin);
+    auto vs = get_patch_ends(rgbmin,false);     // locate top,bottom of patch grid
     validate(vs.first > 0 && vs.second > 0, "No White Space at Top or Bottom detected.");
-    rgbmin = rgbmin.clip(Extants{ int(vs.first), int(vs.second), 0, int(rgbmin.nc-1) });
-    auto hs = get_patch_ends(rgbmin,true);      // left,right
+    auto rgbmin1 = rgbmin.clip(Array2D<float>::Extants{ int(vs.first), int(vs.second), 0, int(rgbmin.nc-1) });
+    auto hs = get_patch_ends(rgbmin1,true);      // locate left,right of patch grid
     validate(hs.first > 0 && hs.second > 0, "No White Space at Left or Right detected.");
+    const auto rgb = refine_image(rgbin, rgbmin, vs, hs);   // align image so top is parallel
     auto [rows, cols] = get_rows_and_columns(rgb, hs, vs);
     float hdelta = static_cast<float>(hs.second - hs.first + 1) / cols;
     float vdelta = static_cast<float>(vs.second - vs.first + 1) / rows;
@@ -267,11 +330,11 @@ vector<vector<PatchStats>> extract_patch_data(const Array2D<V3>& rgb)
         vector<vector<BlockVal>> row_samples;
         for (size_t col = 0; col < cols; col++)
         {
-            vector<BlockVal> patch;
             size_t pos_00 = static_cast<size_t>(round(hs.first + hdelta * col));
             size_t pos_01 = static_cast<size_t>(round(hs.first + hdelta * (col + 1) - 1));
             size_t pos_10 = static_cast<size_t>(round(vs.first + vdelta * row));
             size_t pos_11 = static_cast<size_t>(round(vs.first + vdelta * (row + 1) - 1));
+            vector<BlockVal> patch; patch.reserve((pos_01-pos_00 + 1)*(pos_11 - pos_10 + 1));
             //std::cout << pos_00 << " " << pos_01 << " " << pos_10 << " " << pos_11 << "\n";
             for (size_t i = pos_00; i < pos_01; i++)        // horizontal, second coord
                 for (size_t ii = pos_10; ii < pos_11; ii++) // vertical, first coord
@@ -282,9 +345,7 @@ vector<vector<PatchStats>> extract_patch_data(const Array2D<V3>& rgb)
                     patch.push_back(spot);
                 }
             std::sort(patch.begin(), patch.end(), [](BlockVal& a, BlockVal& b) {return a.dist > b.dist; });
-            // auto xxx=process_sample(patch);  // for debugging: just one process
             row_samples.push_back(patch);
-            get_dist_means(patch);
         }
         samples.push_back(row_samples);
     }
@@ -295,7 +356,7 @@ vector<vector<PatchStats>> extract_patch_data(const Array2D<V3>& rgb)
 bool PatchCharts::init(string tiff_filename, bool landscape)
 {
     auto scale = [](V3 x_in, float factor) {return V3{ x_in[0] * factor, x_in[1] * factor, x_in[2] * factor }; };
-    PatchChart tmp;
+    PatchChart chart;
     try
     {
         {
@@ -308,58 +369,49 @@ bool PatchCharts::init(string tiff_filename, bool landscape)
                     for (int i = 0; i < rgb.nr; i++)
                         for (int ii = 0; ii < rgb.nc; ii++)
                             rgb1(ii, rgb.nr-i-1, color) = rgb(i, ii, color);  // Image top must be on left side!
-                tmp.tiff_rgb =  rgb1;
+                chart.tiff_rgb =  rgb1;
             }
             else
-                tmp.tiff_rgb = rgb;
+                chart.tiff_rgb = rgb;
         }
         //TiffWrite("x.tif", tmp.tiff_rgb,"");
-        validate(tmp.tiff_rgb.nc > 0, "Invalid image patch file");
-        if (tmp.tiff_rgb.dpi !=200)
-            tmp.tiff_rgb = arrayRGBChangeDPI(tmp.tiff_rgb, 200);
+        validate(chart.tiff_rgb.nc > 0, "Invalid image patch file");
+        if (chart.tiff_rgb.dpi !=200)
+            chart.tiff_rgb = arrayRGBChangeDPI(chart.tiff_rgb, 200);
 
-        tmp.rgb = Array2D<V3>(tmp.tiff_rgb.nr, tmp.tiff_rgb.nc);
-        for (int i = 0; i < tmp.tiff_rgb.nr; i++)
-            for (int ii = 0; ii < tmp.tiff_rgb.nc; ii++)
+        chart.rgb = Array2D<V3>(chart.tiff_rgb.nr, chart.tiff_rgb.nc);
+        for (int i = 0; i < chart.tiff_rgb.nr; i++)
+            for (int ii = 0; ii < chart.tiff_rgb.nc; ii++)
             {
-                tmp.rgb(i, ii)[0] = tmp.tiff_rgb(i, ii, 0);
-                tmp.rgb(i, ii)[1] = tmp.tiff_rgb(i, ii, 1);
-                tmp.rgb(i, ii)[2] = tmp.tiff_rgb(i, ii, 2);
+                chart.rgb(i, ii)[0] = chart.tiff_rgb(i, ii, 0);
+                chart.rgb(i, ii)[1] = chart.tiff_rgb(i, ii, 1);
+                chart.rgb(i, ii)[2] = chart.tiff_rgb(i, ii, 2);
             }
-        tmp.patch_data = extract_patch_data(tmp.rgb);
-        tmp.rows = static_cast<int>(tmp.patch_data.size());
-        tmp.cols = static_cast<int>(tmp.patch_data[0].size());
-        for (size_t i = 0; i < tmp.cols; i++)
-            for (size_t ii = 0; ii < tmp.rows; ii++)
+        chart.patch_data = extract_patch_data(chart.rgb);
+        chart.rows = static_cast<int>(chart.patch_data.size());
+        chart.cols = static_cast<int>(chart.patch_data[0].size());
+        for (size_t i = 0; i < chart.cols; i++)
+            for (size_t ii = 0; ii < chart.rows; ii++)
             {
-                rgb255.push_back(scale(tmp.patch_data[ii][i].rgb,255.0f));
-                rgb_std_255.push_back(scale(tmp.patch_data[ii][i].est_err,255.0f));
+                // scale for 8 bit representation [0-255]
+                rgb255.push_back(scale(chart.patch_data[ii][i].rgb,255.0f));
+                rgb_std_255.push_back(scale(chart.patch_data[ii][i].rgb_err,255.0f));
             }
         }
         catch (const char* e) {
             err_info = e;
     }
-    charts.push_back(tmp);
+    charts.push_back(chart);
     return true;
 }
 
 // Add LAB data to associated RGB data for use in generating ICC profiles
-bool PatchCharts::add_lab_to_rgb(const vector<V3> & lab)
+void PatchCharts::add_lab_to_rgb(const vector<V3> & lab)
 {
-    if (rgb255.size() != lab.size())
-    {
-        err_info = "Patch count doesn't match measurement patch count\n";
-        return false;
-    }
+    validate(rgb255.size() == lab.size(), "Patch count doesn't match measurement patch count");
     for (int i = 0; i < rgb255.size(); i++)
     {
+        validate(!(lab[i][0] > 85 && rgb255[i][1] < 127), "Patches not matching high L* values");
         rgblab.push_back(V6{rgb255[i][0], rgb255[i][1], rgb255[i][2], lab[i][0], lab[i][1], lab[i][2] });
-        for (auto& x:rgblab)
-            if (x[4] > 85 && x[1] < 127)    // L* > 85 and G < 127, which should never occur
-            {
-                err_info = "Patches not matching high L* values\n";
-                return false;
-            }
     }
-    return true;
 }

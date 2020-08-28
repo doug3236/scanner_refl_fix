@@ -45,6 +45,9 @@
     <ClInclude Include="Refl_helpers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="array2d.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Calibration.cpp">

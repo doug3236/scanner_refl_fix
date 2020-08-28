@@ -27,11 +27,21 @@ SOFTWARE.
 #include "ScannerReflFix.h"
 #include "validation.h"
 
+using std::vector;
+using std::array;
+using std::ios_base;
+using std::ios;
+using std::string;
+using std::ifstream;
+using std::tuple;
+using std::min;
+using std::get;
+
 extern Options options;
 
 // Read in special scan of calibration image containing white squares of various
 // sizes to calculate a re-reflection matrix and gray squares to calibrate gamma
-bool ScanCalibration::load(std::string cal_tif_file, const vector<float>& neutrals_for_gamma)
+bool ScanCalibration::load(string cal_tif_file, const vector<float>& neutrals_for_gamma)
 {
 	raw_image_in = TiffRead(cal_tif_file.c_str(), 1);		// Read in tiff file but don't adjust for gamma
 	if (raw_image_in.dpi !=200)
@@ -42,14 +52,19 @@ bool ScanCalibration::load(std::string cal_tif_file, const vector<float>& neutra
 	for (int i = 0; i < image.nr; ++i)
 		for (int ii = 0; ii < image.nc; ++ii)
 			image[i][ii] = raw_image_in(i, ii, 1);	// use only green pixels
-	Extants corners = get_global_extants(image);
+	Array2D<float>::Extants corners = get_global_extants(image);
 	image=image.clip(corners);						// trim to cal reference boundaries
 	bool result=update_square_data(true, neutrals_for_gamma);			// initial pass to get accurate gamma values
-	printf("Gammas: %4.2f %4.2f %4.2f %4.2f\n", gamma[0], gamma[1], gamma[2], gamma[3]);
-	if (*std::min_element(gamma.begin(), gamma.end()) < .50f || *std::max_element(gamma.begin(), gamma.end()) > 3.0f ||
-		*std::max_element(gamma.begin(), gamma.end()) - *std::min_element(gamma.begin(), gamma.end()) > .75f)
+
+	const int selected_gamma_patch{ 1 };			// patch number to use to calc. gamma, second patch probably opt.
+	if (options.save_intermediate_files)
+		printf("Gammas: %4.2f %4.2f %4.2f %4.2f\n", gamma[0], gamma[1], gamma[2], gamma[3]);
+	else
+		printf("Gammas: %4.2f\n", gamma[selected_gamma_patch]);
+	if (*min_element(gamma.begin(), gamma.end()) < .50f || *max_element(gamma.begin(), gamma.end()) > 3.0f ||
+		*max_element(gamma.begin(), gamma.end()) - *min_element(gamma.begin(), gamma.end()) > .75f)
 		throw "gammas too far out of range";
-	image.pow(gamma[1]);
+	image.pow(gamma[selected_gamma_patch]);
 
 	// now with gamma estimate get linear, downsampled square info at 50dpi
 	for (int i = 0; i < 14; i++)
@@ -84,7 +99,7 @@ bool ScanCalibration::load(std::string cal_tif_file, const vector<float>& neutra
 float ScanCalibration::update_square_data(bool update_gamma, const vector<float>& neutrals_for_gamma) {
 	// get dark areas
 	Array2D<float> da=image.extract(10, 20, 10, 20);
-	dark = std::accumulate(da.v.begin(), da.v.end(),0.0f)/400.0f;
+	dark = accumulate(da.v.begin(), da.v.end(),0.0f)/400.0f;
 
 	auto iround =[](float f){return static_cast<int>(f+.5f);};
 	for (size_t n = 0; n < locs.size(); n++)
@@ -127,7 +142,7 @@ float ScanCalibration::update_square_data(bool update_gamma, const vector<float>
 		extants[n].bottom=locV-tiny+static_cast<int>(dd);
 		
 		// trim 10 pixels around edges to minimize refraction losses
-		Extants sqr={extants[n].top+10, extants[n].bottom-10,extants[n].left+10,extants[n].right-10};
+		Array2D<float>::Extants sqr={extants[n].top+10, extants[n].bottom-10,extants[n].left+10,extants[n].right-10};
 		Array2D<float> g = image.clip(sqr);
 		refl[n].ave = g.ave();
 		int offset_limit = std::min(g.nr, g.nc)/2-2;
@@ -152,7 +167,8 @@ float ScanCalibration::update_square_data(bool update_gamma, const vector<float>
 	if (update_gamma)
 	{
 		// This code is a bit convoluted, options are to provide no arguments in which case Y is derived from Rel Col
-		// or for 1 argument use that gamma and for 2 or more arguments use Y measurements for gamma.
+		// or for 1 argument use that as the gamma and for 2 or more arguments use
+		// these as CIE Y measurements to calculate gamma.
 		// End fill with duplicates of last gamma
 		for (int i = 1; i < 5; i++)
 		{
@@ -179,7 +195,8 @@ float ScanCalibration::update_square_data(bool update_gamma, const vector<float>
 
 // find approx DC gain 
 float ScanCalibration::optimize_base_gain()
-{	vector<Patch2> samples = {
+	{
+	vector<Patch2> samples = {
 		{0, Patch2::Region::All, 1},		// .15" white patch
 		{5, Patch2::Region::All, 1},		// .25" white patch
 	};
@@ -190,7 +207,7 @@ float ScanCalibration::optimize_base_gain()
 		auto f1 = get_patch_area(samples[1], x2);
 		auto f2 = get_patch13(gain);		// 3" white patch
 		Statistics patches;
-		patches.clk(std::get<0>(f0)); patches.clk(std::get<0>(f1)); patches.clk(f2);
+		patches.clk(get<0>(f0)); patches.clk(get<0>(f1)); patches.clk(f2);
 		return patches.std();
 	};
 	float fmin = 0, err_min = err(fmin);
@@ -319,11 +336,11 @@ float ScanCalibration::calibration_quality(bool zero_gain) {
 	{
 		//squares_50dpi[square.square]
 		auto xxx = get_patch_area(square,refl_50);
-		if (options.save_intermediate_files) printf("%6.4f\n", std::get<0>(xxx));
+		if (options.save_intermediate_files) printf("%6.4f\n", get<0>(xxx));
 		for (int i = 0; i < square.weight && square.square!=0; i++)
-			patches.clk(std::get<0>(xxx));
+			patches.clk(get<0>(xxx));
 		string s="sq_"; s += std::to_string(square.square)+".txt";
-		if (options.save_intermediate_files) std::get<1>(xxx)->print(s, false);
+		if (options.save_intermediate_files) get<1>(xxx)->print(s, false);
 	}
 	float std = patches.std();
 	printf("%s %7.5f\n", zero_gain? "Uncorrected reflection rms err" : "Corrected reflection rms err", 255*std);
@@ -375,12 +392,12 @@ ScanCalibration::Step10dpi ScanCalibration::get_steps_and_align(const vector<flo
 	vector<float> horizd=diff(horiz);
 	vector<float> vertd=diff(vert);
 
-	float horizs=std::accumulate(horizd.begin(), horizd.end(),0.0f);
-	float verts=std::accumulate(vertd.begin(), vertd.end(),0.0f);
+	float horizs=accumulate(horizd.begin(), horizd.end(),0.0f);
+	float verts=accumulate(vertd.begin(), vertd.end(),0.0f);
 	float horizadj=verts/((horizs+verts)/2);
 	float vertadj=horizs/((horizs+verts)/2);
-	std::transform(horizd.begin(),horizd.end(), horizd.begin(), [horizadj](auto v){return horizadj*v;});
-	std::transform(vertd.begin(),vertd.end(), vertd.begin(), [vertadj](auto v){return vertadj*v;});
+	transform(horizd.begin(),horizd.end(), horizd.begin(), [horizadj](auto v){return horizadj*v;});
+	transform(vertd.begin(),vertd.end(), vertd.begin(), [vertadj](auto v){return vertadj*v;});
 	float base=(horiz[0]+vert[0])/2;
 	return Step10dpi{horizd,vertd, base};
 }
@@ -394,7 +411,7 @@ float ScanCalibration::calculate_reflection_matrix()
 	// get smooth vector of near edge samples at .1" intervals from 0.0:.1:1.0
 	auto smooth = [base_refl](const vector<float>& v) {
 		auto v1=v;
-		std::reverse(begin(v1), end(v1));
+		reverse(begin(v1), end(v1));
 		for (size_t i = 0; i < v.size(); i++)
 			v1[i] = (v1[i] + v[i]) / 2;
 		v1.resize(v.size()/2);
@@ -404,7 +421,7 @@ float ScanCalibration::calculate_reflection_matrix()
 		auto center=(log(1+delta_low_high))/2;
 		ret.push_back(center+base_refl);
 		for (size_t i = 10; i < v1.size() - 20; i += 20) {
-			auto tmp = std::accumulate(v1.begin() + i, v1.begin() + 20 + i, 0.0f) / 20.0f;
+			auto tmp = accumulate(v1.begin() + i, v1.begin() + 20 + i, 0.0f) / 20.0f;
 			ret.push_back(base_refl+log(1+(tmp-base_refl)/base_refl));
 		}
 		ret.resize(11);		// limit to 1" (at 200 DPI);
@@ -428,7 +445,7 @@ float ScanCalibration::calculate_reflection_matrix()
 	// reflection10dpi.print("reflMatrix10dpi.txt", true);
 
 	float gain = 1.0f / (reflection10dpi.ave()*reflection10dpi.v.size());	// Normalize reflection matrix to a gain of 1
-	std::transform(reflection10dpi.v.begin(), reflection10dpi.v.end(), reflection10dpi.v.begin(), [gain](auto x){return x*gain;});
+	transform(reflection10dpi.v.begin(), reflection10dpi.v.end(), reflection10dpi.v.begin(), [gain](auto x){return x*gain;});
 
 	float err{};
 	err=calibration_quality(true);		// rms error with no reflection correction

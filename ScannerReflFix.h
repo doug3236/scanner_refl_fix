@@ -26,27 +26,23 @@ SOFTWARE.
 #include <string>
 #include <chrono>
 
-using std::string;
-
 struct Options {
-    string profile_name{ "" };                  // optional file name of profile to attach to corrected image
-    bool batch_mode = false;                    // Batch mode, auto rename with _f append to each tif file name
-    string batch_file = "";                     // Batch file mode, read commands from file
-    int force_ouput_bits = 0;                   // Force 16 bit output file. 8 bit input files default to 8 bit output files
-    bool adjust_to_detected_white = false;      // Scales output values so that the largest .01% of pixels are maxed (255)
-    bool save_intermediate_files = false;       // Saves various intermediate files for debugging
-    float gain_restore_scale = -1.0f;           // Increase RGB values to optimize performance against uncorrected profiles
-    bool make_rgblab_cgats = false;             // Make rgblab cgats file for icc profile creation
-    bool landscape = false;                     // tif targets are in landscape, default is profile
-    bool simulate_reflected_light = false;      // generate an image estimate of scanner's re-reflected light addition.
-    float edge_reflectance = .85f;              // average reflected light of area outside of scan crop (if black: .01)
-    bool reflection_stats =false;               // read in standard scatter 35x29 chart and print metrics
-    bool print_line_and_time = false;           // print line number and time since start for each major phase of process
-    bool correct_image_in_aRGB = false;         // correct image from scanner that has been converted to Adobe RGB
-    string calibration_file = "scanner_cal.txt";// Default Scanner reflection calibration text file
-    bool scanner_cal=false;                     // Scanner reflection calibration tif file?
-    string executable_directory = "";           // contains directory where executable is located
-    vector<float> Y;                            // optional Y values for determining gamma
+    bool correct_image_in_aRGB = false;             // correct image from scanner that has been converted to Adobe RGB
+    bool batch_mode = false;                        // Batch mode, auto rename with _f append to each tif file name
+    std::string batch_file = "";                    // Batch file mode, read commands from file
+    std::string calibration_file = "scanner_cal.txt";// Default Scanner reflection calibration text file
+    bool scanner_cal = false;                       // Scanner reflection calibration tif file
+    int force_output_bits = 0;                      // Force 16 bit output file. 8 bit input files default to 8 bit output files
+    bool save_intermediate_files = false;           // Saves various intermediate files for debugging
+    float gain_restore_scale = 50.0f;               // Increase RGB values by percentage of filter DC gain
+    bool make_rgblab_cgats = false;                 // Make rgb or rgblab cgats file for icc profile creation
+    bool landscape = false;                         // tif targets are in landscape, default is profile
+    std::string profile_name{ "" };                 // optional file name of profile to attach to corrected image
+    bool simulate_reflected_light = false;          // generate an image estimate of scanner's re-reflected light addition.
+    float edge_reflectance = .85f;                  // average reflected light of area outside of scan crop (if black: .01)
+    bool reflection_stats =false;                   // read in standard scatter 35x29 chart and print metrics
+    bool print_line_and_time = false;               // print line number and time since start for each major phase of process
+    bool adjust_to_detected_white = false;          // Scales output values so that the largest .01% of pixels are maxed (255)
 };
 
 

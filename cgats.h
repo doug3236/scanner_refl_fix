@@ -20,7 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#pragma once
+#ifndef CGATS_H
+#define CGATS_H
 
 #include <vector>
 #include <utility>
@@ -33,38 +34,33 @@ SOFTWARE.
 
 #include "statistics.h"
 
-using std::vector;
-using std::string;
-using std::pair;
-using std::array;
-
 namespace cgats_utilities {
     // gathers CGATs file info
     struct Cgats_data {
-        string filename;
-        vector<vector<string>> lines;   // tokenized lines in CGATs file
-        vector<string> fields;          // tokenized list of fields
-        vector<vector<string>>::iterator data_ptr; // pointer to start of value lines
+        std::string filename;
+        std::vector<std::vector<std::string>> lines;   // tokenized lines in CGATs file
+        std::vector<std::string> fields;          // tokenized list of fields
+        std::vector<std::vector<std::string>>::iterator data_ptr; // pointer to start of value lines
         int num_of_fields;  // num_of_fields==fields.size()==data_ptr[0].size()
         int num_of_sets;    // data_ptr[0] to data_ptr[num_of_sets-1]
         ptrdiff_t rgb_loc;  // location of RGB_R in fields
         ptrdiff_t lab_loc;  // location of LAB_L in fields
     };
-    Cgats_data populate_cgats(const string& filename);
-    vector<string> parse(const string& s);
-    vector<vector<string>> tokenize_file(const string& filename);
+    Cgats_data populate_cgats(const std::string& filename);
+    std::vector<std::string> parse(const std::string& s);
+    std::vector<std::vector<std::string>> tokenize_file(const std::string& filename);
 
-    using V3=array<double, 3>;  // typically used to hold RGB, LAB or XYZ values
-    using V6=array<double, 6>;  // typically used to hold RGBLAB value sets
+    using V3= std::array<float, 3>;  // typically used to hold RGB, LAB or XYZ values
+    using V6= std::array<float, 6>;  // typically used to hold RGBLAB value sets
 
-    vector<V6> read_cgats_rgblab(const string& filename, bool include_lab = true);
-    vector<V3> read_cgats_rgb(const string& filename);
+    std::vector<V6> read_cgats_rgblab(const std::string& filename, bool include_lab = true);
+    std::vector<V3> read_cgats_rgb(const std::string& filename);
 
-    bool write_cgats_rgb(const vector<V3>& rgb, const string& filename);  // write rgb patch file
-    bool write_cgats_lab(const vector<V3>& lab, const string& filename);  // 288 lab file for scanner reference creation
-    bool write_cgats_rgblab(const vector<V6>& rgblab, const string& filename, string descriptor = "RGBLAB");
-    pair<vector<V3>, vector<V3>> separate_rgb_lab(const vector<V6>& rgblab);
-    vector<V6> combine_rgb_lab(const vector<V3>& rgb, const vector<V3>& lab);
+    bool write_cgats_rgb(const std::vector<V3>& rgb, const std::string& filename);  // write rgb patch file
+    bool write_cgats_lab(const std::vector<V3>& lab, const std::string& filename);  // 288 lab file for scanner reference creation
+    bool write_cgats_rgblab(const std::vector<V6>& rgblab, const std::string& filename, std::string descriptor = "RGBLAB");
+    std::pair<std::vector<V3>, std::vector<V3>> separate_rgb_lab(const std::vector<V6>& rgblab);
+    std::vector<V6> combine_rgb_lab(const std::vector<V3>& rgb, const std::vector<V3>& lab);
 
     // predicate for sort by RGB values
     bool less_than(const V6& arg1, const V6& arg2);
@@ -78,5 +74,6 @@ namespace cgats_utilities {
     };
 
     // sort and remove duplicates from patch sets
-    vector<DuplicateStats> remove_duplicates(vector<V6> vals);
+    std::vector<DuplicateStats> remove_duplicates(std::vector<V6> vals);
 }
+#endif

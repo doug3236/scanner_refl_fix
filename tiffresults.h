@@ -39,25 +39,16 @@ SOFTWARE.
 #include <future>
 #include "interpolate.h"
 
-// Common std types
-using std::vector;
-using std::string;
-using std::array;
-using std::ifstream;
-using std::ios_base;
-using std::ios;
-using std::tuple;
-
-
 // Utility Functions
 class ArrayRGB;
 void attach_profile(const std::string & profile, TIFF * out, const ArrayRGB & rgb);
-void TiffWrite(const char *file, const ArrayRGB &rgb, const string &profile);
+void TiffWrite(const char *file, const ArrayRGB &rgb, const std::string &profile);
 void TiffWrite(const char* file, const Array2D<float> rgb);
+void TiffWrite(const char* file, const Array2D<std::array<float, 3>> rgb, const std::string& profile);
 ArrayRGB TiffRead(const char *filename, float gamma);
-tuple<ArrayRGB, int, int> getReflArea(const int dpi, InterpolateRefl& interpolate, const int use_this_size_if_not_0 = 0);
+std::tuple<ArrayRGB, int, int> getReflArea(const int dpi, InterpolateRefl& interpolate, const int use_this_size_if_not_0 = 0);
 ArrayRGB generate_reflected_light_estimate(const ArrayRGB& image_reduced, const ArrayRGB& refl_area);
-Array2D<float> generate_reflected_light_estimate(const Array2D<float>& image_reduced, const array<array<float,93>,93>& refl_area, float fill=0);
+Array2D<float> generate_reflected_light_estimate(const Array2D<float>& image_reduced, const std::array<std::array<float,93>,93>& refl_area, float fill=0);
 ArrayRGB arrayRGBChangeDPI(const ArrayRGB& imag_in, int new_dpi);
 
 // uncomment to disable multi-threading of R,G, and B color channels
@@ -73,8 +64,8 @@ static auto launchType = std::launch::async;
 // and so can be easily multi-threaded. Values are normally in gamma=1 and are [0:1]
 class ArrayRGB {
 public:
-    vector<float> v[3];			// separate vectors for each R, G, and B channels
-    vector<uint8> profile;     // size is zero if no profile attached to image
+    std::vector<float> v[3];			// separate vectors for each R, G, and B channels
+	std::vector<uint8> profile;     // size is zero if no profile attached to image
     int dpi;
     int nc, nr;
     float gamma;
@@ -134,7 +125,7 @@ inline ArrayRGB downsample(const ArrayRGB &from, int rate)
 
 	ArrayRGB ret(nr, nc);
 	// fspecial('gaussian',5,1.2)
-	array<array<float, 5>, 5> smooth{
+	std::array<std::array<float, 5>, 5> smooth{
 		0.007332f, 0.020779f, 0.029406f, 0.020779f, 0.007332f,
 		0.020779f, 0.058888f, 0.083334f, 0.058888f, 0.020779f,
 		0.029406f, 0.083334f, 0.117928f, 0.083334f, 0.029406f,
@@ -181,7 +172,7 @@ inline Array2D<float> downsample(const Array2D<float> &from, int rate)
 
 	// fspecial('gaussian',5,1.2)
 	Array2D<float> ret(nr, nc);
-	array<array<float, 5>, 5> smooth{
+	std::array<std::array<float, 5>, 5> smooth{
 		0.007332f, 0.020779f, 0.029406f, 0.020779f, 0.007332f,
 		0.020779f, 0.058888f, 0.083334f, 0.058888f, 0.020779f,
 		0.029406f, 0.083334f, 0.117928f, 0.083334f, 0.029406f,
